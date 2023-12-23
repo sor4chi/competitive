@@ -1,5 +1,5 @@
 {
-  "Print to console": {
+  "AtCoder Template": {
     "prefix": "atc",
     "body": [
       "#include <bits/stdc++.h>",
@@ -20,5 +20,67 @@
       "}"
     ],
     "description": "AtCoder Template"
+  },
+  "BFS": {
+    "prefix": "bfs",
+    "body": [
+      "queue<int> que;",
+      "que.push(s);",
+      "vector<int> dist(n, -1);",
+      "dist[s] = 0;",
+      "while (!que.empty()) {",
+      "  int v = que.front();",
+      "  que.pop();",
+      "  for (auto nv : g[v]) {",
+      "    if (dist[nv] != -1) continue;",
+      "    dist[nv] = dist[v] + 1;",
+      "    que.push(nv);",
+      "  }",
+      "}"
+    ],
+    "description": "BFS"
+  },
+  "DFS": {
+    "prefix": "dfs",
+    "body": [
+      "vector<int> dist(n, -1);",
+      "dist[s] = 0;",
+      "function<void(int)> dfs = [&](int v) {",
+      "  for (auto nv : g[v]) {",
+      "    if (dist[nv] != -1) continue;",
+      "    dist[nv] = dist[v] + 1;",
+      "    dfs(nv);",
+      "  }",
+      "};",
+      "dfs(s);"
+    ],
+    "description": "DFS"
+  },
+  "UnionFind": {
+    "prefix": "unionfind",
+    "body": [
+      "struct UnionFind {",
+      "  vector<int> par;",
+      "  vector<int> siz;",
+      "  UnionFind(int n) : par(n), siz(n, 1) {",
+      "    rep(i, n) par[i] = i;",
+      "  }",
+      "  int root(int x) {",
+      "    if (par[x] == x) return x;",
+      "    return par[x] = root(par[x]);",
+      "  }",
+      "  bool same(int x, int y) { return root(x) == root(y); }",
+      "  void unite(int x, int y) {",
+      "    x = root(x);",
+      "    y = root(y);",
+      "    if (x == y) return;",
+      "    if (siz[x] < siz[y]) swap(x, y);",
+      "    par[y] = x;",
+      "    siz[x] += siz[y];",
+      "  }",
+      "  int size(int x) { return siz[root(x)]; }",
+      "};"
+    ],
+    "description": "UnionFind"
   }
 }
