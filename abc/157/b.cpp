@@ -17,6 +17,11 @@ void print() { cout << '\n'; }
 #define rep(i, n) for (ll i = 0; i < n; i++)
 
 int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+    cout.tie(nullptr);
+    cout << fixed << setprecision(15);
+
     vector<vector<ll> > a(3, vector<ll>(3));
     vector<vector<bool> > hitmap(3, vector<bool>(3));
     for (ll i = 0; i < 3; ++i)

@@ -33,6 +33,11 @@ ll my_min_element(vector<ll> v) {
 }
 
 int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+    cout.tie(nullptr);
+    cout << fixed << setprecision(15);
+
     ll n, min = 1000000000;
     cin >> n;
     vector<ll> x(n);
