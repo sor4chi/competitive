@@ -100,5 +100,17 @@
       "};"
     ],
     "description": "UnionFind"
+  },
+  "LRUD": {
+    "prefix": "lrud",
+    "body": [
+      "const map<char, pair<ll, ll>> d = {",
+      "  {'L', {0, -1}},",
+      "  {'R', {0, 1}},",
+      "  {'U', {-1, 0}},",
+      "  {'D', {1, 0}},",
+      "};"
+    ],
+    "description": "LRUD"
   }
 }
