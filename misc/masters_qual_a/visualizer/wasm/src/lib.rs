@@ -2,7 +2,8 @@ mod original_lib;
 use std::cmp::min;
 
 use crate::original_lib::{gen as original_gen, Input};
-use original_lib::{can_move, compute_score, parse_input, parse_output, Output, DIJ};
+use original_lib::{can_move, compute_diff, parse_input, Output, DIJ};
+use proconio::input;
 use svg::node::element::{Circle, Group, Line, Rectangle, Text};
 use wasm_bindgen::prelude::*;
 
@@ -201,20 +202,123 @@ fn generate_svg(input: &Input, output: &Output) -> String {
     svg.to_string()
 }
 
+fn generate_yakinamashi_svg(input: &Input, output: &YakinamashiOutput, turn: usize) -> String {
+    let state = output.steps[turn].clone();
+    let colors = get_colors(input.n * input.n);
+    let cell_width = min(SVG_WIDTH / input.n, 50);
+    let cell_height = min(SVG_HEIGHT / input.n, 50);
+    let mut group = Group::new();
+    for i in 0..input.n {
+        for j in 0..input.n {
+            let x = j * cell_width;
+            let y = i * cell_height;
+            let cell_num = state[i][j];
+            let color_index = (cell_num - 1) as usize;
+            let rect = Rectangle::new()
+                .set("x", x)
+                .set("y", y)
+                .set("width", cell_width)
+                .set("height", cell_height)
+                .set("fill", encode_to_hsla(colors[color_index]))
+                .set("stroke", "#4444")
+                .set("stroke-width", 1);
+            group = group.add(rect);
+            let text = Text::new()
+                .set("x", x + cell_width / 2)
+                .set("y", y + cell_height / 2)
+                .set("text-anchor", "middle")
+                .set("dominant-baseline", "central")
+                .set("font-size", cell_height / 3)
+                .set("fill", "black")
+                .add(svg::node::Text::new(format!("{}", cell_num)));
+            group = group.add(text);
+        }
+    }
+    for i in 0..input.n {
+        for j in 0..input.n - 1 {
+            let ch = input.vs[i][j];
+            if ch == '0' {
+                continue;
+            }
+            let x = j * cell_width + cell_width;
+            let y = i * cell_height;
+            let line = Line::new()
+                .set("x1", x)
+                .set("y1", y)
+                .set("x2", x)
+                .set("y2", y + cell_height)
+                .set("stroke", "black")
+                .set("stroke-width", 3);
+            group = group.add(line);
+        }
+    }
+    for i in 0..input.n - 1 {
+        for j in 0..input.n {
+            let ch = input.hs[i][j];
+            if ch == '0' {
+                continue;
+            }
+            let x = j * cell_width;
+            let y = i * cell_height + cell_height;
+            let line = Line::new()
+                .set("x1", x)
+                .set("y1", y)
+                .set("x2", x + cell_width)
+                .set("y2", y)
+                .set("stroke", "black")
+                .set("stroke-width", 3);
+            group = group.add(line);
+        }
+    }
+    let svg = svg::Document::new()
+        .set("width", SVG_WIDTH)
+        .set("height", SVG_HEIGHT)
+        .add(group);
+    svg.to_string()
+}
+
+struct YakinamashiOutput {
+    steps: Vec<Vec<Vec<i32>>>,
+}
+
+fn parse_yakinamashi_output(input: &Input, f: &str) -> Result<YakinamashiOutput, String> {
+    // split f to lines
+    let f = f
+        .trim()
+        .split('\n')
+        .map(|s| s.trim().to_string())
+        .collect::<Vec<_>>();
+    let iter = f.len() / input.n;
+    // parse f to steps, f includes n * n's array * iter times
+    let mut steps = vec![];
+    for i in 0..iter {
+        let mut step = vec![];
+        for j in 0..input.n {
+            let line = &f[i * input.n + j];
+            let row = line
+                .split_whitespace()
+                .map(|s| s.parse::<i32>().unwrap())
+                .collect::<Vec<_>>();
+            step.push(row);
+        }
+        steps.push(step);
+    }
+    Ok(YakinamashiOutput { steps })
+}
+
 #[wasm_bindgen]
 pub fn vis(_input: String, _output: String, turn: usize) -> Ret {
     let input = parse_input(&_input);
-    let out = parse_output(&input, &_output);
+    let out = parse_yakinamashi_output(&input, &_output);
+    let before = compute_diff(&input, &input.a);
     let (score, err, svg) = match out {
         Ok(out) => {
-            let turn_sliced_out = &out.out[0..turn];
-            let out = Output {
-                start: out.start,
-                out: turn_sliced_out.to_vec(),
-            };
-            let (score, err) = compute_score(&input, &out);
-            let svg = generate_svg(&input, &out);
-            (score, err, svg)
+            let after = compute_diff(&input, &out.steps[turn]);
+            let score = ((1e6 * (f64::log2(before as f64) - f64::log2(after as f64))).round()
+                as i64)
+                .max(1);
+            let svg = generate_yakinamashi_svg(&input, &out, turn);
+            (score, "".to_string(), svg)
         }
         Err(err) => (0, err, "".to_string()),
     };
@@ -224,9 +328,9 @@ pub fn vis(_input: String, _output: String, turn: usize) -> Ret {
 #[wasm_bindgen]
 pub fn get_max_turn(_input: String, _output: String) -> usize {
     let input = parse_input(&_input);
-    let out = parse_output(&input, &_output);
+    let out = parse_yakinamashi_output(&input, &_output);
     match out {
-        Ok(out) => out.out.len(),
+        Ok(out) => out.steps.len(),
         Err(_) => 0,
     }
 }

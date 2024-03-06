@@ -230,7 +230,7 @@ pub fn compute_score(input: &Input, out: &Output) -> (i64, String) {
     (score, err)
 }
 
-fn compute_diff(input: &Input, a: &Vec<Vec<i32>>) -> i64 {
+pub fn compute_diff(input: &Input, a: &Vec<Vec<i32>>) -> i64 {
     let mut diff = 0;
     for i in 0..input.n {
         for j in 0..input.n {
