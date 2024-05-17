@@ -137,8 +137,18 @@ int main() {
         out.ans[i + 1].push_back('B');
     }
 
-    int q = 100;
-    while (q--) {
+    auto is_request_cleared = [&]() {
+        rep(i, in.n) {
+            if (request[i] != in.n * i - 1) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+restart:;
+    int q = in.n * in.n;
+    while (q-- && !is_request_cleared()) {
         rep(i, in.n) {
             if (request[i] == -1) continue;
             auto p = find_value_from_board(request[i]);
@@ -160,11 +170,43 @@ int main() {
             request[i]--;
             if (p.second == 0) {
                 board[p.first][0] = in.A[p.first][in.n - 1];
+                in.A[p.first][in.n - 1] = -1;
             }
             break;
         }
         debug_request();
         debug_board();
+    }
+
+    if (!is_request_cleared()) {
+        rep(i, in.n) {
+            if (board[i][0] != -1) {
+                pair<int, int> to;
+                rep(i, in.n) {
+                    rep(j, in.n - 2) {
+                        if (board[i][j + 1] == -1) {
+                            to = {i, j + 1};
+                        }
+                    }
+                }
+                auto path_from = get_path(cur, {i, 0});
+                for (auto& c : path_from) {
+                    out.ans[0].push_back(c);
+                }
+                cur = {i, 0};
+                auto path_to = get_path({i, 0}, to);
+                out.ans[0].push_back('P');
+                for (auto& c : path_to) {
+                    out.ans[0].push_back(c);
+                }
+                out.ans[0].push_back('Q');
+                board[to.first][to.second] = board[i][0];
+                board[i][0] = in.A[i][in.n - 1];
+                cur = to;
+            }
+        }
+        debug_board();
+        goto restart;
     }
 
     for (auto& a : out.ans) {
