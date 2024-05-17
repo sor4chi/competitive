@@ -130,7 +130,7 @@ int main() {
     };
 
     rep(i, in.n) {
-        request[i] = in.n * i + 4;
+        request[i] = in.n * i;
     }
 
     rep(i, in.n - 1) {
@@ -138,8 +138,10 @@ int main() {
     }
 
     auto is_request_cleared = [&]() {
+        vector<int> request_copy = request;
+        sort(request_copy.begin(), request_copy.end());
         rep(i, in.n) {
-            if (request[i] != in.n * i - 1) {
+            if (request_copy[i] != (i + 1) * 5) {
                 return false;
             }
         }
@@ -167,7 +169,7 @@ restart:;
             board[p.first][p.second] = -1;
             cerr << "clear: " << request[i] << "|" << i << '\n';
             cur = {request[i] / in.n, in.n - 1};
-            request[i]--;
+            request[i]++;
             if (p.second == 0) {
                 board[p.first][0] = in.A[p.first][in.n - 1];
                 in.A[p.first][in.n - 1] = -1;
