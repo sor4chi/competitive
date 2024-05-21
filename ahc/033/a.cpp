@@ -35,12 +35,230 @@ struct Input {
     vector<vector<int>> A;
 };
 
-struct Output {
-    vector<vector<char>> ans;
+struct Crane {
+    int row, col;
+    bool is_big;
+    int picking;
+    bool is_crushed;
 };
 
-struct Container {
-    int v, col;
+enum Operation {
+    PICK,     // pick
+    UP,       // up
+    DOWN,     // down
+    LEFT,     // left
+    RIGHT,    // right
+    RELEASE,  // release
+    CRUSH,    // crush
+    STAY,     // stay
+};
+
+string to_string(Operation op) {
+    if (op == PICK) {
+        return "P";
+    } else if (op == UP) {
+        return "U";
+    } else if (op == DOWN) {
+        return "D";
+    } else if (op == LEFT) {
+        return "L";
+    } else if (op == RIGHT) {
+        return "R";
+    } else if (op == RELEASE) {
+        return "Q";
+    } else if (op == CRUSH) {
+        return "B";
+    } else if (op == STAY) {
+        return ".";
+    }
+    return "Invalid Operation";
+}
+
+int manhattan(pair<int, int> a, pair<int, int> b) {
+    return abs(a.first - b.first) + abs(a.second - b.second);
+}
+
+const pair<int, int> directions[4] = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
+
+vector<Operation> get_path(pair<int, int> from, pair<int, int> to) {
+    vector<Operation> path;
+    while (from != to) {
+        if (from.first < to.first) {
+            path.push_back(DOWN);
+            from.first++;
+        } else if (from.first > to.first) {
+            path.push_back(UP);
+            from.first--;
+        } else if (from.second < to.second) {
+            path.push_back(RIGHT);
+            from.second++;
+        } else {
+            path.push_back(LEFT);
+            from.second--;
+        }
+    }
+    return path;
+}
+
+struct Board {
+    int n;
+    vector<queue<int>> container_qs;
+    vector<vector<int>> board;
+    vector<Crane> cranes;
+    vector<stack<int>> container_stacks;
+    vector<vector<Operation>> history;
+    vector<Operation> current_operations;
+
+    Board(int n) : n(n), container_qs(n), board(n, vector<int>(n, -1)), cranes(n), container_stacks(n), current_operations(n) {
+        rep(i, n) {
+            cranes[i].row = 0;
+            cranes[i].col = i;
+            cranes[i].is_big = i == 0;
+            cranes[i].picking = -1;
+            cranes[i].is_crushed = false;
+        }
+        init_current_operations();
+        history = vector<vector<Operation>>(n);
+    }
+
+    void add_container(int i, int v) {
+        container_qs[i].push(v);
+    }
+
+    void pick(int i) {
+        assert(cranes[i].picking == -1);
+        cranes[i].picking = board[cranes[i].col][cranes[i].row];
+        board[cranes[i].col][cranes[i].row] = -1;
+        current_operations[i] = PICK;
+    }
+
+    void move(int i, Operation dir) {
+        if (dir == UP) {
+            cranes[i].col--;
+        } else if (dir == DOWN) {
+            cranes[i].col++;
+        } else if (dir == LEFT) {
+            cranes[i].row--;
+        } else if (dir == RIGHT) {
+            cranes[i].row++;
+        } else {
+            cerr << "Invalid direction: " << dir << endl;
+            assert(false);
+        }
+        if (cranes[i].row < 0 || cranes[i].row >= n || cranes[i].col < 0 || cranes[i].col >= n) {
+            cerr << "Crane " << i << " moved out of the board" << endl;
+            assert(false);
+        }
+        current_operations[i] = dir;
+    }
+
+    void release(int i) {
+        assert(cranes[i].picking != -1);
+        board[cranes[i].col][cranes[i].row] = cranes[i].picking;
+        cranes[i].picking = -1;
+        current_operations[i] = RELEASE;
+    }
+
+    void crush(int i) {
+        assert(cranes[i].picking == -1);
+        cranes[i].is_crushed = true;
+        current_operations[i] = CRUSH;
+    }
+
+    void tick(bool update_current_operations = true) {
+        rep(i, n) {
+            if (board[i][0] == -1 && !container_qs[i].empty()) {
+                board[i][0] = container_qs[i].front();
+                container_qs[i].pop();
+            }
+        }
+        rep(i, n) {
+            if (board[i][n - 1] != -1) {
+                container_stacks[i].push(board[i][n - 1]);
+                board[i][n - 1] = -1;
+            }
+        }
+        if (update_current_operations) {
+            rep(i, n) {
+                history[i].push_back(current_operations[i]);
+            }
+            init_current_operations();
+        }
+    }
+
+    pair<int, int> find_container(int v) {
+        rep(i, n) {
+            rep(j, n) {
+                if (board[i][j] == v) {
+                    return {i, j};
+                }
+            }
+        }
+        return {-1, -1};
+    }
+
+    vector<pair<int, int>> find_empty_arounds(pair<int, int> pos) {
+        vector<pair<int, int>> empty_arounds;
+        for (auto dir : directions) {
+            int new_col = pos.first + dir.first;
+            int new_row = pos.second + dir.second;
+            if (new_row < 0 || new_row >= n || new_col < 0 || new_col >= n) continue;
+            if (board[new_col][new_row] == -1) {
+                empty_arounds.push_back({new_col, new_row});
+            }
+        }
+        return empty_arounds;
+    }
+
+    void debug() {
+        cerr << "DEBUG BOARD" << endl;
+        rep(i, board.size()) {
+            rep(j, board[i].size()) {
+                cerr << board[i][j] << ' ';
+            }
+            cerr << endl;
+        }
+        cerr << "DEBUG CRANES" << endl;
+        rep(i, cranes.size()) {
+            cerr << "(" << cranes[i].col << "," << cranes[i].row << ") " << (cranes[i].is_big ? "bg" : "sm") << " picking: " << setw(2) << cranes[i].picking << " crushed: " << cranes[i].is_crushed << endl;
+        }
+        cerr << "DEBUG CONTAINER QS" << endl;
+        vector<queue<int>> container_qs_copy = container_qs;
+        rep(i, container_qs_copy.size()) {
+            cerr << i << ": ";
+            while (!container_qs_copy[i].empty()) {
+                cerr << container_qs_copy[i].front() << ' ';
+                container_qs_copy[i].pop();
+            }
+            cerr << endl;
+        }
+        cerr << "DEBUG CONTAINER STACKS" << endl;
+        vector<stack<int>> container_stacks_copy = container_stacks;
+        rep(i, container_stacks_copy.size()) {
+            cerr << i << ": ";
+            while (!container_stacks_copy[i].empty()) {
+                cerr << container_stacks_copy[i].top() << ' ';
+                container_stacks_copy[i].pop();
+            }
+            cerr << endl;
+        }
+        cerr << "DEBUG HISTORY" << endl;
+        rep(i, history.size()) {
+            cerr << i << ": ";
+            for (auto op : history[i]) {
+                cerr << to_string(op) << ' ';
+            }
+            cerr << endl;
+        }
+        cerr << "END DEBUG" << endl;
+    }
+
+   private:
+    void init_current_operations() {
+        rep(i, n) {
+            current_operations[i] = STAY;
+        }
+    }
 };
 
 int main() {
@@ -54,172 +272,127 @@ int main() {
     in.A.resize(in.n, vector<int>(in.n));
     rep(i, in.n) rep(j, in.n) input(in.A[i][j]);
 
-    Output out;
-    out.ans.resize(in.n);
-
-    auto get_path = [&](pair<int, int> from, pair<int, int> to) {
-        vector<char> path;
-        while (from != to) {
-            if (from.first < to.first) {
-                path.push_back('D');
-                from.first++;
-            } else if (from.first > to.first) {
-                path.push_back('U');
-                from.first--;
-            } else if (from.second < to.second) {
-                path.push_back('R');
-                from.second++;
-            } else {
-                path.push_back('L');
-                from.second--;
-            }
-        }
-        return path;
-    };
-
-    pair<int, int> cur = {0, 0};
-
-    vector<vector<int>> board(in.n, vector<int>(in.n, -1));
-
-    auto debug_board = [&]() {
-        cerr << "board:\n";
-        rep(i, in.n) {
-            rep(j, in.n) {
-                cerr << setw(2) << setfill(' ') << board[i][j] << ' ';
-            }
-            cerr << '\n';
-        }
-    };
-
-    debug_board();
-
-    rep(i, in.n) {
-        rep(j, in.n - 1) {
-            out.ans[i].push_back('P');
-            rep(k, in.n - j - 2) {
-                out.ans[i].push_back('R');
-            }
-            out.ans[i].push_back('Q');
-            rep(k, in.n - j - 2) {
-                out.ans[i].push_back('L');
-            }
-            board[i][in.n - j - 2] = in.A[i][j];
-        }
-        out.ans[i].pop_back();
-        out.ans[i].pop_back();
+    Board board(in.n);
+    rep(i, in.n) rep(j, in.n) {
+        board.add_container(i, in.A[i][j]);
     }
+    board.tick(false);
 
-    debug_board();
-
-    auto find_value_from_board = [&](int v) {
-        rep(i, in.n) {
-            rep(j, in.n) {
-                if (board[i][j] == v) {
-                    return make_pair(i, j);
+    Operation op = PICK;
+    for (int width = in.n - 1; width >= 2; width--) {
+        int cnt = 0;
+        while (cnt <= 2 * width - 1) {
+            if (cnt == 0) op = PICK;
+            if (cnt > 0 && cnt < width) op = RIGHT;
+            if (cnt == width) op = RELEASE;
+            if (cnt > width) op = LEFT;
+            cnt++;
+            rep(i, in.n) {
+                if (op == PICK) {
+                    board.pick(i);
+                }
+                if (op == RIGHT) {
+                    board.move(i, RIGHT);
+                }
+                if (op == RELEASE) {
+                    board.release(i);
+                }
+                if (op == LEFT) {
+                    if (width == 2) goto pull_end;
+                    board.move(i, LEFT);
                 }
             }
+            board.tick();
         }
-        return make_pair(-1, -1);
-    };
-
-    vector<int> request(in.n);
-    auto debug_request = [&]() {
-        cerr << "request: ";
-        rep(i, in.n) {
-            cerr << request[i] << ' ';
-        }
-        cerr << '\n';
-    };
-
-    rep(i, in.n) {
-        request[i] = in.n * i;
     }
 
-    rep(i, in.n - 1) {
-        out.ans[i + 1].push_back('B');
-    }
+pull_end:
 
-    auto is_request_cleared = [&]() {
-        vector<int> request_copy = request;
-        sort(request_copy.begin(), request_copy.end());
-        rep(i, in.n) {
-            if (request_copy[i] != (i + 1) * 5) {
-                return false;
-            }
-        }
-        return true;
-    };
+    vector<int> requested(in.n);
+    rep(i, in.n) requested[i] = i * in.n;
 
-restart:;
-    int q = in.n * in.n;
-    while (q-- && !is_request_cleared()) {
-        rep(i, 100000000) {
+    queue<Operation> operations;
+    bool is_first = true;
+    while (true) {
+        if (is_first) {
+            rep(i, in.n - 1) {
+                board.crush(i + 1);
+            }
+            is_first = false;
         }
+        pair<int, int> crane_current = {board.cranes[0].col, board.cranes[0].row};
+
+        vector<int> not_empty_cols;
         rep(i, in.n) {
-            if (request[i] == -1) continue;
-            auto p = find_value_from_board(request[i]);
-            if (p.first == -1 && p.second == -1) continue;
-            cerr << "request: " << request[i] << " found: " << p.first << ' ' << p.second << '\n';
-            auto path = get_path(cur, p);
-            for (auto& c : path) {
-                out.ans[0].push_back(c);
-            }
-            cur = p;
-            auto path2 = get_path(p, {request[i] / in.n, in.n - 1});
-            out.ans[0].push_back('P');
-            for (auto& c : path2) {
-                out.ans[0].push_back(c);
-            }
-            out.ans[0].push_back('Q');
-            board[p.first][p.second] = -1;
-            cerr << "clear: " << request[i] << "|" << i << '\n';
-            cur = {request[i] / in.n, in.n - 1};
-            request[i]++;
-            if (p.second == 0) {
-                board[p.first][0] = in.A[p.first][in.n - 1];
-                in.A[p.first][in.n - 1] = -1;
-            }
+            if (board.container_qs[i].empty()) continue;
+            not_empty_cols.push_back(i);
             break;
         }
-        debug_request();
-        debug_board();
-    }
 
-    if (!is_request_cleared()) {
-        rep(i, in.n) {
-            if (board[i][0] != -1) {
-                pair<int, int> to;
-                rep(i, in.n) {
-                    rep(j, in.n - 2) {
-                        if (board[i][j + 1] == -1) {
-                            to = {i, j + 1};
-                        }
-                    }
+        if (operations.empty() && !not_empty_cols.empty()) {
+            int not_empty_col = not_empty_cols[0];
+            pair<int, int> target_pos = {not_empty_col, 0};
+            vector<pair<int, int>> empty_arounds = board.find_empty_arounds(target_pos);
+            if (!empty_arounds.empty()) {
+                vector<Operation> go_to_picking = get_path(crane_current, target_pos);
+                vector<Operation> go_to_releasing = get_path(target_pos, empty_arounds[0]);
+                for (auto& op : go_to_picking) {
+                    operations.push(op);
                 }
-                auto path_from = get_path(cur, {i, 0});
-                for (auto& c : path_from) {
-                    out.ans[0].push_back(c);
+                operations.push(PICK);
+                for (auto& op : go_to_releasing) {
+                    operations.push(op);
                 }
-                cur = {i, 0};
-                auto path_to = get_path({i, 0}, to);
-                out.ans[0].push_back('P');
-                for (auto& c : path_to) {
-                    out.ans[0].push_back(c);
-                }
-                out.ans[0].push_back('Q');
-                board[to.first][to.second] = board[i][0];
-                board[i][0] = in.A[i][in.n - 1];
-                in.A[i][in.n - 1] = -1;
-                cur = to;
+                operations.push(RELEASE);
             }
         }
-        debug_board();
-        goto restart;
+
+        if (operations.empty()) {
+            vector<tuple<int, pair<int, int>, pair<int, int>>> scores;
+            rep(i, in.n) {
+                int request = requested[i];
+                pair<int, int> target_pos = board.find_container(request);
+                if (target_pos.first == -1) continue;
+                int score = manhattan(crane_current, target_pos) + manhattan(target_pos, {i, in.n - 1});
+                scores.push_back({score, target_pos, {i, in.n - 1}});
+            }
+            sort(scores.begin(), scores.end());
+            if (scores.empty()) break;
+            auto [score, target_pos_to_picking, target_pos_to_releasing] = scores[0];
+            vector<Operation> go_to_pulling = get_path(crane_current, target_pos_to_picking);
+            vector<Operation> go_to_releasing = get_path(target_pos_to_picking, target_pos_to_releasing);
+            for (auto& op : go_to_pulling) {
+                operations.push(op);
+            }
+            operations.push(PICK);
+            for (auto& op : go_to_releasing) {
+                operations.push(op);
+            }
+            operations.push(RELEASE);
+        }
+
+        Operation op = operations.front();
+        operations.pop();
+        if (op == PICK) {
+            board.pick(0);
+        } else if (op == UP) {
+            board.move(0, UP);
+        } else if (op == DOWN) {
+            board.move(0, DOWN);
+        } else if (op == LEFT) {
+            board.move(0, LEFT);
+        } else if (op == RIGHT) {
+            board.move(0, RIGHT);
+        } else if (op == RELEASE) {
+            board.release(0);
+            if (board.cranes[0].row == in.n - 1) requested[board.cranes[0].col]++;
+        }
+        board.tick();
     }
 
-    for (auto& a : out.ans) {
+    for (auto& a : board.history) {
         for (auto& b : a) {
-            cout << b;
+            cout << to_string(b);
         }
         cout << '\n';
     }
