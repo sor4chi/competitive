@@ -351,6 +351,7 @@ pull_end:
             vector<tuple<int, pair<int, int>, pair<int, int>>> scores;
             rep(i, in.n) {
                 int request = requested[i];
+                if (request == -1) continue;
                 pair<int, int> target_pos = board.find_container(request);
                 if (target_pos.first == -1) continue;
                 int score = manhattan(crane_current, target_pos) + manhattan(target_pos, {i, in.n - 1});
@@ -385,7 +386,13 @@ pull_end:
             board.move(0, RIGHT);
         } else if (op == RELEASE) {
             board.release(0);
-            if (board.cranes[0].row == in.n - 1) requested[board.cranes[0].col]++;
+            if (board.cranes[0].row == in.n - 1) {
+                if (requested[board.cranes[0].col] == (board.cranes[0].col + 1) * in.n - 1) {
+                    requested[board.cranes[0].col] = -1;
+                } else {
+                    requested[board.cranes[0].col]++;
+                }
+            }
         }
         board.tick();
     }
