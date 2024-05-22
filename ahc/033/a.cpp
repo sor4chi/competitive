@@ -85,6 +85,14 @@ enum PathMode {
     RELEASING,
 };
 
+Operation rev_direction(Operation dir) {
+    if (dir == UP) return DOWN;
+    if (dir == DOWN) return UP;
+    if (dir == LEFT) return RIGHT;
+    if (dir == RIGHT) return LEFT;
+    return STAY;
+}
+
 vector<Operation> get_path(pair<int, int> from, pair<int, int> to, PathMode mode) {
     vector<Operation> path;
     while (from != to) {
@@ -122,17 +130,41 @@ vector<Operation> get_path(pair<int, int> from, pair<int, int> to, PathMode mode
     return path;
 }
 
+vector<pair<int, int>> simulate_path(pair<int, int> from, vector<Operation> path) {
+    vector<pair<int, int>> positions;
+    positions.push_back(from);
+    for (auto& op : path) {
+        pair<int, int> next = positions.back();
+        if (op == UP) {
+            next.first--;
+        } else if (op == DOWN) {
+            next.first++;
+        } else if (op == LEFT) {
+            next.second--;
+        } else if (op == RIGHT) {
+            next.second++;
+        }
+        positions.push_back(next);
+    }
+    return positions;
+}
+
+struct Container {
+    int value;
+    int locker;
+};
+
 struct Game {
     int n;
     vector<queue<int>> container_qs;
-    vector<vector<int>> board;
+    vector<vector<Container>> board;
     vector<Crane> cranes;
     vector<stack<int>> container_stacks;
     vector<vector<Operation>> history;
     vector<queue<Operation>> crane_operations;
     vector<int> requested;
 
-    Game(int n) : n(n), container_qs(n), board(n, vector<int>(n, -1)), cranes(n), container_stacks(n), crane_operations(n), requested(n) {
+    Game(int n) : n(n), container_qs(n), board(n, vector<Container>(n, {-1, -1})), cranes(n), container_stacks(n), crane_operations(n), requested(n) {
         rep(i, n) {
             cranes[i].row = 0;
             cranes[i].col = i;
@@ -151,11 +183,16 @@ struct Game {
 
     void pick(int i) {
         assert(cranes[i].picking == -1);
-        cranes[i].picking = board[cranes[i].col][cranes[i].row];
-        board[cranes[i].col][cranes[i].row] = -1;
+        assert(!cranes[i].is_crushed);
+        assert(board[cranes[i].col][cranes[i].row].value != -1);
+        assert(board[cranes[i].col][cranes[i].row].locker == i || board[cranes[i].col][cranes[i].row].locker == -1);
+        cranes[i].picking = board[cranes[i].col][cranes[i].row].value;
+        board[cranes[i].col][cranes[i].row].value = -1;
+        board[cranes[i].col][cranes[i].row].locker = -1;
     }
 
     void move(int i, Operation dir) {
+        assert(!cranes[i].is_crushed);
         if (dir == UP) {
             cranes[i].col--;
         } else if (dir == DOWN) {
@@ -176,26 +213,28 @@ struct Game {
 
     void release(int i) {
         assert(cranes[i].picking != -1);
-        board[cranes[i].col][cranes[i].row] = cranes[i].picking;
+        assert(!cranes[i].is_crushed);
+        board[cranes[i].col][cranes[i].row].value = cranes[i].picking;
         cranes[i].picking = -1;
     }
 
     void crush(int i) {
         assert(cranes[i].picking == -1);
+        assert(!cranes[i].is_crushed);
         cranes[i].is_crushed = true;
     }
 
     void tick() {
         rep(i, n) {
-            if (board[i][0] == -1 && !container_qs[i].empty()) {
-                board[i][0] = container_qs[i].front();
+            if (board[i][0].value == -1 && !container_qs[i].empty()) {
+                board[i][0].value = container_qs[i].front();
                 container_qs[i].pop();
             }
         }
         rep(i, n) {
-            if (board[i][n - 1] != -1) {
-                container_stacks[i].push(board[i][n - 1]);
-                board[i][n - 1] = -1;
+            if (board[i][n - 1].value != -1) {
+                container_stacks[i].push(board[i][n - 1].value);
+                board[i][n - 1].value = -1;
             }
         }
         bool all_empty = true;
@@ -233,15 +272,46 @@ struct Game {
                         requested[cranes[i].col]++;
                     }
                 }
+            } else if (op == CRUSH) {
+                crush(i);
+                unlock_cranes_board(i);
             }
             history[i].push_back(op);
         }
     }
 
+    void unlock_cranes_board(int i) {
+        rep(j, n) {
+            rep(k, n) {
+                if (board[j][k].locker == i) {
+                    board[j][k].locker = -1;
+                }
+            }
+        }
+    }
+
+    int get_uncrushed_small_crane_id() {
+        rep(i, n) {
+            if (!cranes[i].is_crushed && !cranes[i].is_big) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    bool is_request_completed() {
+        rep(i, n) {
+            if (requested[i] != -1) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     pair<int, int> find_container(int v) {
         rep(i, n) {
             rep(j, n) {
-                if (board[i][j] == v) {
+                if (board[i][j].value == v) {
                     return {i, j};
                 }
             }
@@ -249,24 +319,88 @@ struct Game {
         return {-1, -1};
     }
 
-    vector<pair<int, int>> find_empty_arounds(pair<int, int> pos) {
-        vector<pair<int, int>> empty_arounds;
-        for (auto dir : directions) {
-            int new_col = pos.first + dir.first;
-            int new_row = pos.second + dir.second;
-            if (new_row < 0 || new_row >= n || new_col < 0 || new_col >= n) continue;
-            if (board[new_col][new_row] == -1) {
-                empty_arounds.push_back({new_col, new_row});
+    vector<pair<int, int>> find_floating_containers() {
+        set<pair<int, int>> floating_containers;
+        rep(i, n) {
+            rep(j, n - 2) {
+                int revj = n - 2 - j;
+                if (board[i][revj - 1].locker != -1 || board[i][revj].locker != -1) continue;
+                if (board[i][revj - 1].value != -1 && board[i][revj].value == -1) {
+                    floating_containers.insert({i, revj - 1});
+                }
             }
         }
-        return empty_arounds;
+        vector<pair<int, int>> floating_containers_vec(floating_containers.begin(), floating_containers.end());
+        return floating_containers_vec;
+    }
+
+    vector<pair<int, int>> find_empty_arounds(pair<int, int> pos) {
+        vector<pair<int, pair<int, int>>> empty_arounds;
+        rep(i, n) {
+            rep(j, n - 1) {
+                if (board[i][j].value == -1) {
+                    int dist = manhattan(pos, {i, j});
+                    empty_arounds.push_back({dist, {i, j}});
+                }
+            }
+        }
+        sort(empty_arounds.begin(), empty_arounds.end(), [](auto a, auto b) { return a.first < b.first; });
+        vector<pair<int, int>> empty_arounds_vec;
+        for (auto& ea : empty_arounds) {
+            empty_arounds_vec.push_back(ea.second);
+        }
+        return empty_arounds_vec;
+    }
+
+    pair<int, int> peek_next_crane_pos(int i) {
+        int next_row = cranes[i].row;
+        int next_col = cranes[i].col;
+        if (crane_operations[i].empty()) return {next_col, next_row};
+        Operation next_op = crane_operations[i].front();
+        if (next_op == UP) {
+            next_col--;
+        } else if (next_op == DOWN) {
+            next_col++;
+        } else if (next_op == LEFT) {
+            next_row--;
+        } else if (next_op == RIGHT) {
+            next_row++;
+        }
+        return {next_col, next_row};
+    }
+
+    vector<Operation> crane_movable_operations(int i) {
+        assert(!cranes[i].is_crushed);
+        vector<Operation> movable_ops;
+        if (cranes[i].col > 0) {
+            movable_ops.push_back(UP);
+        }
+        if (cranes[i].col < n - 1) {
+            movable_ops.push_back(DOWN);
+        }
+        if (cranes[i].row > 0) {
+            movable_ops.push_back(LEFT);
+        }
+        if (cranes[i].row < n - 1) {
+            movable_ops.push_back(RIGHT);
+        }
+        return movable_ops;
     }
 
     void debug() {
-        cerr << "DEBUG BOARD" << endl;
+        cerr << endl;
+        cerr << "=========================== DEBUG ===========================" << endl;
+        cerr << "DEBUG BOARD VALUE" << endl;
         rep(i, board.size()) {
             rep(j, board[i].size()) {
-                cerr << board[i][j] << ' ';
+                cerr << setw(2) << board[i][j].value << ' ';
+            }
+            cerr << endl;
+        }
+        cerr << "DEBUG BOARD LOCKER" << endl;
+        rep(i, board.size()) {
+            rep(j, board[i].size()) {
+                cerr << setw(2) << board[i][j].locker << ' ';
             }
             cerr << endl;
         }
@@ -289,20 +423,18 @@ struct Game {
         rep(i, container_stacks_copy.size()) {
             cerr << i << ": ";
             while (!container_stacks_copy[i].empty()) {
-                cerr << container_stacks_copy[i].top() << ' ';
+                cerr << setw(2) << container_stacks_copy[i].top() << ' ';
                 container_stacks_copy[i].pop();
             }
             cerr << endl;
         }
         cerr << "DEBUG HISTORY" << endl;
         rep(i, history.size()) {
-            cerr << i << ": ";
             for (auto op : history[i]) {
-                cerr << to_string(op) << ' ';
+                cerr << to_string(op);
             }
             cerr << endl;
         }
-        cerr << "END DEBUG" << endl;
     }
 };
 
@@ -341,27 +473,56 @@ int main() {
 
 pull_end:
 
-    rep(i, in.n - 1) {
-        game.crane_operations[i + 1].push(CRUSH);
-    }
-
-    while (true) {
-        pair<int, int> crane_current = {game.cranes[0].col, game.cranes[0].row};
-
-        vector<int> not_empty_cols;
+    int init_operation_count = game.crane_operations[0].size();
+    int working_small_crane_id = -2;
+    int iter = 0;
+    int snapshot_stack_count = 0;
+    vector<int> requested_snapshot = game.requested;
+    while (!game.is_request_completed()) {
+        bool same_snapshot = true;
         rep(i, in.n) {
-            if (game.container_qs[i].empty()) continue;
-            not_empty_cols.push_back(i);
-            break;
+            if (game.requested[i] != requested_snapshot[i]) {
+                same_snapshot = false;
+                break;
+            }
+        }
+        if (same_snapshot) {
+            snapshot_stack_count++;
+        } else {
+            snapshot_stack_count = 0;
+        }
+        requested_snapshot = game.requested;
+        iter++;
+
+        vector<int> uncrashed_cranes;
+        rep(i, in.n) {
+            if (!game.cranes[i].is_crushed) {
+                uncrashed_cranes.push_back(i);
+            }
         }
 
-        if (game.crane_operations[0].empty() && !not_empty_cols.empty()) {
-            int not_empty_col = not_empty_cols[0];
-            pair<int, int> target_pos = {not_empty_col, 0};
-            vector<pair<int, int>> empty_arounds = game.find_empty_arounds(target_pos);
-            if (!empty_arounds.empty()) {
+        bool is_qs_empty = true;
+        rep(i, in.n) {
+            if (!game.container_qs[i].empty()) {
+                is_qs_empty = false;
+                break;
+            }
+        }
+
+        if (game.crane_operations[0].empty() && uncrashed_cranes.size() == 1 && !is_qs_empty && snapshot_stack_count > 10) {
+            int col = -1;
+            rep(i, in.n) {
+                if (game.board[i][0].value != -1) {
+                    col = i;
+                    break;
+                }
+            }
+            if (col != -1) {
+                pair<int, int> crane_current = {game.cranes[0].col, game.cranes[0].row};
+                pair<int, int> target_pos = {col, 0};
                 vector<Operation> go_to_picking = get_path(crane_current, target_pos, PICKING);
-                vector<Operation> go_to_releasing = get_path(target_pos, empty_arounds[0], RELEASING);
+                vector<Operation> go_to_releasing = get_path(target_pos, {target_pos.first, target_pos.second + 1}, RELEASING);
+                game.board[target_pos.first][target_pos.second].locker = 0;
                 for (auto& op : go_to_picking) {
                     game.crane_operations[0].push(op);
                 }
@@ -374,20 +535,23 @@ pull_end:
         }
 
         if (game.crane_operations[0].empty()) {
+            pair<int, int> crane_current = {game.cranes[0].col, game.cranes[0].row};
             vector<tuple<int, pair<int, int>, pair<int, int>>> scores;
             rep(i, in.n) {
                 int request = game.requested[i];
                 if (request == -1) continue;
                 pair<int, int> target_pos = game.find_container(request);
                 if (target_pos.first == -1) continue;
+                if (game.board[target_pos.first][target_pos.second].locker != -1) continue;
                 int score = manhattan(crane_current, target_pos) + manhattan(target_pos, {i, in.n - 1});
                 scores.push_back({score, target_pos, {i, in.n - 1}});
             }
             sort(scores.begin(), scores.end());
-            if (scores.empty()) break;
+            if (scores.empty()) goto skip_big_crane;
             auto [score, target_pos_to_picking, target_pos_to_releasing] = scores[0];
             vector<Operation> go_to_pulling = get_path(crane_current, target_pos_to_picking, PICKING);
             vector<Operation> go_to_releasing = get_path(target_pos_to_picking, target_pos_to_releasing, RELEASING);
+            game.board[target_pos_to_picking.first][target_pos_to_picking.second].locker = 0;
             for (auto& op : go_to_pulling) {
                 game.crane_operations[0].push(op);
             }
@@ -396,6 +560,137 @@ pull_end:
                 game.crane_operations[0].push(op);
             }
             game.crane_operations[0].push(RELEASE);
+        }
+
+    skip_big_crane:
+
+        vector<pair<int, int>> floating_containers = game.find_floating_containers();
+        if (!floating_containers.empty() && working_small_crane_id != -1 && iter > init_operation_count) {
+            pair<int, int> container = floating_containers[0];
+            if (working_small_crane_id == -2) {
+                int closest_small_crane_id = -1;
+                int min_dist = 1e9;
+                rep(i, in.n) {
+                    if (game.cranes[i].is_big) continue;
+                    if (game.cranes[i].is_crushed) continue;
+                    int dist = manhattan({game.cranes[i].col, game.cranes[i].row}, container);
+                    if (dist < min_dist) {
+                        min_dist = dist;
+                        closest_small_crane_id = i;
+                    }
+                }
+                working_small_crane_id = closest_small_crane_id;
+            }
+            if (game.cranes[working_small_crane_id].is_crushed) {
+                working_small_crane_id = game.get_uncrushed_small_crane_id();
+                if (working_small_crane_id == -1) {
+                    goto small_container_end;
+                }
+            }
+            if (game.crane_operations[working_small_crane_id].empty()) {
+                pair<int, int> crane_current = {game.cranes[working_small_crane_id].col, game.cranes[working_small_crane_id].row};
+                pair<int, int> target_pos = container;
+                vector<Operation> go_to_picking = get_path(crane_current, target_pos, PICKING);
+                vector<Operation> go_to_releasing = get_path(target_pos, {target_pos.first, target_pos.second + 1}, RELEASING);
+                game.board[target_pos.first][target_pos.second].locker = working_small_crane_id;
+                for (auto& op : go_to_picking) {
+                    game.crane_operations[working_small_crane_id].push(op);
+                }
+                game.crane_operations[working_small_crane_id].push(PICK);
+                for (auto& op : go_to_releasing) {
+                    game.crane_operations[working_small_crane_id].push(op);
+                }
+                game.crane_operations[working_small_crane_id].push(RELEASE);
+            };
+        }
+
+    small_container_end:
+
+        set<int> tmp_crushed;
+        rep(i, in.n) {
+            for (int j = i + 1; j < in.n; j++) {
+                if (i == j) continue;
+                if (game.cranes[i].is_crushed || game.cranes[j].is_crushed) continue;
+                if (tmp_crushed.count(i) || tmp_crushed.count(j)) continue;
+                pair<int, int> current_i_pos = {game.cranes[i].col, game.cranes[i].row};
+                pair<int, int> current_j_pos = {game.cranes[j].col, game.cranes[j].row};
+                pair<int, int> next_i_pos = game.peek_next_crane_pos(i);
+                pair<int, int> next_j_pos = game.peek_next_crane_pos(j);
+                if (next_i_pos == next_j_pos) {
+                    if (game.cranes[j].picking != -1) {
+                        vector<pair<int, int>> empty_arounds = game.find_empty_arounds(current_j_pos);
+                        vector<Operation> best_path;
+                        for (auto& ea : empty_arounds) {
+                            vector<Operation> path = get_path(current_j_pos, ea, RELEASING);
+                            vector<pair<int, int>> positions = simulate_path(current_j_pos, path);
+                            bool found = true;
+                            for (auto& pos : positions) {
+                                if (game.board[pos.first][pos.second].value != -1) {
+                                    found = false;
+                                    break;
+                                }
+                                if (pos == current_i_pos) {
+                                    found = false;
+                                    break;
+                                }
+                            }
+                            if (found) {
+                                best_path = path;
+                                break;
+                            }
+                        }
+                        queue<Operation> tmp;
+                        tmp.push(STAY);
+                        while (!game.crane_operations[i].empty()) {
+                            tmp.push(game.crane_operations[i].front());
+                            game.crane_operations[i].pop();
+                        }
+                        game.crane_operations[i] = tmp;
+                        game.crane_operations[j] = queue<Operation>();
+                        game.unlock_cranes_board(j);
+                        for (auto& op : best_path) {
+                            game.crane_operations[j].push(op);
+                        }
+                        game.crane_operations[j].push(RELEASE);
+                        game.crane_operations[j].push(CRUSH);
+                    } else {
+                        if (game.cranes[j].picking == -1) {
+                            game.crane_operations[j] = queue<Operation>();
+                            game.crane_operations[j].push(CRUSH);
+                            game.unlock_cranes_board(j);
+                            tmp_crushed.insert(j);
+                        } else {
+                            queue<Operation> tmp;
+                            tmp.push(STAY);
+                            while (!game.crane_operations[j].empty()) {
+                                tmp.push(game.crane_operations[j].front());
+                                game.crane_operations[j].pop();
+                            }
+                            game.crane_operations[j] = tmp;
+                        }
+                    }
+                }
+                if (current_i_pos == next_j_pos && current_j_pos == next_i_pos) {
+                    vector<Operation> movable = game.crane_movable_operations(i);
+                    Operation next_move = game.crane_operations[i].front();
+                    Operation tmp;
+                    for (auto m : movable) {
+                        if (m != next_move) {
+                            tmp = m;
+                            break;
+                        }
+                    }
+                    queue<Operation> tmpq;
+                    tmpq.push(tmp);
+                    tmpq.push(STAY);
+                    tmpq.push(rev_direction(tmp));
+                    while (!game.crane_operations[i].empty()) {
+                        tmpq.push(game.crane_operations[i].front());
+                        game.crane_operations[i].pop();
+                    }
+                    game.crane_operations[i] = tmpq;
+                }
+            }
         }
 
         game.tick();

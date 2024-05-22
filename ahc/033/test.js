@@ -8,7 +8,11 @@ await $`g++ ./a.cpp -o ./a.out`;
 
 const reports = [];
 
-for (const path of glob.scanSync()) {
+const sortedPaths = Array.from(glob.scanSync()).sort((a, b) => a.localeCompare(b));
+
+for (const path of sortedPaths) {
+  console.log(path);
+  await new Promise((resolve) => setTimeout(resolve, 100));
   const input = await file(path).text();
   const filename = path.split("/").pop();
   execSync(`echo "${input}" | ./a.out > tools/report.out`);
