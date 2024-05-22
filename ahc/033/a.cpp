@@ -312,14 +312,11 @@ pull_end:
     vector<int> requested(in.n);
     rep(i, in.n) requested[i] = i * in.n;
 
-    bool is_first = true;
+    rep(i, in.n - 1) {
+        game.crush(i + 1);
+    }
+
     while (true) {
-        if (is_first) {
-            rep(i, in.n - 1) {
-                game.crush(i + 1);
-            }
-            is_first = false;
-        }
         pair<int, int> crane_current = {game.cranes[0].col, game.cranes[0].row};
 
         vector<int> not_empty_cols;
