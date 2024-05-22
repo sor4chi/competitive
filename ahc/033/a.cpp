@@ -74,11 +74,30 @@ string to_string(Operation op) {
     return "Invalid Operation";
 }
 
-int manhattan(pair<int, int> a, pair<int, int> b) {
-    return abs(a.first - b.first) + abs(a.second - b.second);
+struct Position {
+    int row, col;
+
+    bool operator==(const Position& other) const {
+        return row == other.row && col == other.col;
+    }
+
+    bool operator!=(const Position& other) const {
+        return !(*this == other);
+    }
+
+    bool operator<(const Position& other) const {
+        if (row != other.row) {
+            return row < other.row;
+        }
+        return col < other.col;
+    }
+};
+
+int manhattan(Position a, Position b) {
+    return abs(a.row - b.row) + abs(a.col - b.col);
 }
 
-const pair<int, int> directions[4] = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
+const Position directions[4] = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
 
 enum PathMode {
     PICKING,
@@ -93,56 +112,56 @@ Operation rev_direction(Operation dir) {
     return STAY;
 }
 
-vector<Operation> get_path(pair<int, int> from, pair<int, int> to, PathMode mode) {
+vector<Operation> get_path(Position from, Position to, PathMode mode) {
     vector<Operation> path;
     while (from != to) {
         if (mode == PICKING) {
-            if (from.first < to.first) {
+            if (from.row < to.row) {
                 path.push_back(DOWN);
-                from.first++;
-            } else if (from.first > to.first) {
+                from.row++;
+            } else if (from.row > to.row) {
                 path.push_back(UP);
-                from.first--;
-            } else if (from.second < to.second) {
+                from.row--;
+            } else if (from.col < to.col) {
                 path.push_back(RIGHT);
-                from.second++;
+                from.col++;
             } else {
                 path.push_back(LEFT);
-                from.second--;
+                from.col--;
             }
         }
         if (mode == RELEASING) {
-            if (from.second < to.second) {
+            if (from.col < to.col) {
                 path.push_back(RIGHT);
-                from.second++;
-            } else if (from.second > to.second) {
+                from.col++;
+            } else if (from.col > to.col) {
                 path.push_back(LEFT);
-                from.second--;
-            } else if (from.first < to.first) {
+                from.col--;
+            } else if (from.row < to.row) {
                 path.push_back(DOWN);
-                from.first++;
+                from.row++;
             } else {
                 path.push_back(UP);
-                from.first--;
+                from.row--;
             }
         }
     }
     return path;
 }
 
-vector<pair<int, int>> simulate_path(pair<int, int> from, vector<Operation> path) {
-    vector<pair<int, int>> positions;
+vector<Position> simulate_path(Position from, vector<Operation> path) {
+    vector<Position> positions;
     positions.push_back(from);
     for (auto& op : path) {
-        pair<int, int> next = positions.back();
+        Position next = positions.back();
         if (op == UP) {
-            next.first--;
+            next.row--;
         } else if (op == DOWN) {
-            next.first++;
+            next.row++;
         } else if (op == LEFT) {
-            next.second--;
+            next.col--;
         } else if (op == RIGHT) {
-            next.second++;
+            next.col++;
         }
         positions.push_back(next);
     }
@@ -166,8 +185,8 @@ struct Game {
 
     Game(int n) : n(n), container_qs(n), board(n, vector<Container>(n, {-1, -1})), cranes(n), container_stacks(n), crane_operations(n), requested(n) {
         rep(i, n) {
-            cranes[i].row = 0;
-            cranes[i].col = i;
+            cranes[i].row = i;
+            cranes[i].col = 0;
             cranes[i].is_big = i == 0;
             cranes[i].picking = -1;
             cranes[i].is_crushed = false;
@@ -184,23 +203,23 @@ struct Game {
     void pick(int i) {
         assert(cranes[i].picking == -1);
         assert(!cranes[i].is_crushed);
-        assert(board[cranes[i].col][cranes[i].row].value != -1);
-        assert(board[cranes[i].col][cranes[i].row].locker == i || board[cranes[i].col][cranes[i].row].locker == -1);
-        cranes[i].picking = board[cranes[i].col][cranes[i].row].value;
-        board[cranes[i].col][cranes[i].row].value = -1;
-        board[cranes[i].col][cranes[i].row].locker = -1;
+        assert(board[cranes[i].row][cranes[i].col].value != -1);
+        assert(board[cranes[i].row][cranes[i].col].locker == i || board[cranes[i].row][cranes[i].col].locker == -1);
+        cranes[i].picking = board[cranes[i].row][cranes[i].col].value;
+        board[cranes[i].row][cranes[i].col].value = -1;
+        board[cranes[i].row][cranes[i].col].locker = -1;
     }
 
     void move(int i, Operation dir) {
         assert(!cranes[i].is_crushed);
         if (dir == UP) {
-            cranes[i].col--;
-        } else if (dir == DOWN) {
-            cranes[i].col++;
-        } else if (dir == LEFT) {
             cranes[i].row--;
-        } else if (dir == RIGHT) {
+        } else if (dir == DOWN) {
             cranes[i].row++;
+        } else if (dir == LEFT) {
+            cranes[i].col--;
+        } else if (dir == RIGHT) {
+            cranes[i].col++;
         } else {
             cerr << "Invalid direction: " << dir << endl;
             assert(false);
@@ -214,7 +233,7 @@ struct Game {
     void release(int i) {
         assert(cranes[i].picking != -1);
         assert(!cranes[i].is_crushed);
-        board[cranes[i].col][cranes[i].row].value = cranes[i].picking;
+        board[cranes[i].row][cranes[i].col].value = cranes[i].picking;
         cranes[i].picking = -1;
     }
 
@@ -265,11 +284,11 @@ struct Game {
                 move(i, RIGHT);
             } else if (op == RELEASE) {
                 release(i);
-                if (cranes[i].row == n - 1) {
-                    if (requested[cranes[i].col] == (cranes[i].col + 1) * n - 1) {
-                        requested[cranes[i].col] = -1;
+                if (cranes[i].col == n - 1) {
+                    if (requested[cranes[i].row] == (cranes[i].row + 1) * n - 1) {
+                        requested[cranes[i].row] = -1;
                     } else {
-                        requested[cranes[i].col]++;
+                        requested[cranes[i].row]++;
                     }
                 }
             } else if (op == CRUSH) {
@@ -308,7 +327,7 @@ struct Game {
         return true;
     }
 
-    pair<int, int> find_container(int v) {
+    Position find_container(int v) {
         rep(i, n) {
             rep(j, n) {
                 if (board[i][j].value == v) {
@@ -319,8 +338,8 @@ struct Game {
         return {-1, -1};
     }
 
-    vector<pair<int, int>> find_floating_containers() {
-        set<pair<int, int>> floating_containers;
+    vector<Position> find_floating_containers() {
+        set<Position> floating_containers;
         rep(i, n) {
             rep(j, n - 2) {
                 int revj = n - 2 - j;
@@ -330,12 +349,12 @@ struct Game {
                 }
             }
         }
-        vector<pair<int, int>> floating_containers_vec(floating_containers.begin(), floating_containers.end());
+        vector<Position> floating_containers_vec(floating_containers.begin(), floating_containers.end());
         return floating_containers_vec;
     }
 
-    vector<pair<int, int>> find_empty_arounds(pair<int, int> pos) {
-        vector<pair<int, pair<int, int>>> empty_arounds;
+    vector<Position> find_empty_arounds(Position pos) {
+        vector<pair<int, Position>> empty_arounds;
         rep(i, n) {
             rep(j, n - 1) {
                 if (board[i][j].value == -1) {
@@ -345,43 +364,43 @@ struct Game {
             }
         }
         sort(empty_arounds.begin(), empty_arounds.end(), [](auto a, auto b) { return a.first < b.first; });
-        vector<pair<int, int>> empty_arounds_vec;
+        vector<Position> empty_arounds_vec;
         for (auto& ea : empty_arounds) {
             empty_arounds_vec.push_back(ea.second);
         }
         return empty_arounds_vec;
     }
 
-    pair<int, int> peek_next_crane_pos(int i) {
+    Position peek_next_crane_pos(int i) {
         int next_row = cranes[i].row;
         int next_col = cranes[i].col;
-        if (crane_operations[i].empty()) return {next_col, next_row};
+        if (crane_operations[i].empty()) return {next_row, next_col};
         Operation next_op = crane_operations[i].front();
         if (next_op == UP) {
-            next_col--;
-        } else if (next_op == DOWN) {
-            next_col++;
-        } else if (next_op == LEFT) {
             next_row--;
-        } else if (next_op == RIGHT) {
+        } else if (next_op == DOWN) {
             next_row++;
+        } else if (next_op == LEFT) {
+            next_col--;
+        } else if (next_op == RIGHT) {
+            next_col++;
         }
-        return {next_col, next_row};
+        return {next_row, next_col};
     }
 
     vector<Operation> crane_movable_operations(int i) {
         assert(!cranes[i].is_crushed);
         vector<Operation> movable_ops;
-        if (cranes[i].col > 0) {
+        if (cranes[i].row > 0) {
             movable_ops.push_back(UP);
         }
-        if (cranes[i].col < n - 1) {
+        if (cranes[i].row < n - 1) {
             movable_ops.push_back(DOWN);
         }
-        if (cranes[i].row > 0) {
+        if (cranes[i].col > 0) {
             movable_ops.push_back(LEFT);
         }
-        if (cranes[i].row < n - 1) {
+        if (cranes[i].col < n - 1) {
             movable_ops.push_back(RIGHT);
         }
         return movable_ops;
@@ -406,7 +425,7 @@ struct Game {
         }
         cerr << "DEBUG CRANES" << endl;
         rep(i, cranes.size()) {
-            cerr << "(" << cranes[i].col << "," << cranes[i].row << ") " << (cranes[i].is_big ? "bg" : "sm") << " picking: " << setw(2) << cranes[i].picking << " crushed: " << cranes[i].is_crushed << endl;
+            cerr << "(" << cranes[i].row << "," << cranes[i].col << ") " << (cranes[i].is_big ? "bg" : "sm") << " picking: " << setw(2) << cranes[i].picking << " crushed: " << cranes[i].is_crushed << endl;
         }
         cerr << "DEBUG CONTAINER QS" << endl;
         vector<queue<int>> container_qs_copy = container_qs;
@@ -510,19 +529,19 @@ pull_end:
         }
 
         if (game.crane_operations[0].empty() && uncrashed_cranes.size() == 1 && !is_qs_empty && snapshot_stack_count > 10) {
-            int col = -1;
+            int row = -1;
             rep(i, in.n) {
                 if (game.board[i][0].value != -1) {
-                    col = i;
+                    row = i;
                     break;
                 }
             }
-            if (col != -1) {
-                pair<int, int> crane_current = {game.cranes[0].col, game.cranes[0].row};
-                pair<int, int> target_pos = {col, 0};
+            if (row != -1) {
+                Position crane_current = {game.cranes[0].row, game.cranes[0].col};
+                Position target_pos = {row, 0};
                 vector<Operation> go_to_picking = get_path(crane_current, target_pos, PICKING);
-                vector<Operation> go_to_releasing = get_path(target_pos, {target_pos.first, target_pos.second + 1}, RELEASING);
-                game.board[target_pos.first][target_pos.second].locker = 0;
+                vector<Operation> go_to_releasing = get_path(target_pos, {target_pos.row, target_pos.col + 1}, RELEASING);
+                game.board[target_pos.row][target_pos.col].locker = 0;
                 for (auto& op : go_to_picking) {
                     game.crane_operations[0].push(op);
                 }
@@ -535,23 +554,24 @@ pull_end:
         }
 
         if (game.crane_operations[0].empty()) {
-            pair<int, int> crane_current = {game.cranes[0].col, game.cranes[0].row};
-            vector<tuple<int, pair<int, int>, pair<int, int>>> scores;
+            Position crane_current = {game.cranes[0].row, game.cranes[0].col};
+            vector<tuple<int, Position, Position>> scores;
             rep(i, in.n) {
                 int request = game.requested[i];
                 if (request == -1) continue;
-                pair<int, int> target_pos = game.find_container(request);
-                if (target_pos.first == -1) continue;
-                if (game.board[target_pos.first][target_pos.second].locker != -1) continue;
-                int score = manhattan(crane_current, target_pos) + manhattan(target_pos, {i, in.n - 1});
-                scores.push_back({score, target_pos, {i, in.n - 1}});
+                Position target_pos = game.find_container(request);
+                if (target_pos.row == -1) continue;
+                if (game.board[target_pos.row][target_pos.col].locker != -1) continue;
+                Position target_pos_to_releasing = {i, in.n - 1};
+                int score = manhattan(crane_current, target_pos) + manhattan(target_pos, target_pos_to_releasing);
+                scores.push_back({score, target_pos, target_pos_to_releasing});
             }
             sort(scores.begin(), scores.end());
             if (scores.empty()) goto skip_big_crane;
             auto [score, target_pos_to_picking, target_pos_to_releasing] = scores[0];
             vector<Operation> go_to_pulling = get_path(crane_current, target_pos_to_picking, PICKING);
             vector<Operation> go_to_releasing = get_path(target_pos_to_picking, target_pos_to_releasing, RELEASING);
-            game.board[target_pos_to_picking.first][target_pos_to_picking.second].locker = 0;
+            game.board[target_pos_to_picking.row][target_pos_to_picking.col].locker = 0;
             for (auto& op : go_to_pulling) {
                 game.crane_operations[0].push(op);
             }
@@ -564,16 +584,17 @@ pull_end:
 
     skip_big_crane:
 
-        vector<pair<int, int>> floating_containers = game.find_floating_containers();
+        vector<Position> floating_containers = game.find_floating_containers();
         if (!floating_containers.empty() && working_small_crane_id != -1 && iter > init_operation_count) {
-            pair<int, int> container = floating_containers[0];
+            Position container = floating_containers[0];
             if (working_small_crane_id == -2) {
                 int closest_small_crane_id = -1;
                 int min_dist = 1e9;
                 rep(i, in.n) {
                     if (game.cranes[i].is_big) continue;
                     if (game.cranes[i].is_crushed) continue;
-                    int dist = manhattan({game.cranes[i].col, game.cranes[i].row}, container);
+                    Position crane_current = {game.cranes[i].row, game.cranes[i].col};
+                    int dist = manhattan(crane_current, container);
                     if (dist < min_dist) {
                         min_dist = dist;
                         closest_small_crane_id = i;
@@ -588,11 +609,11 @@ pull_end:
                 }
             }
             if (game.crane_operations[working_small_crane_id].empty()) {
-                pair<int, int> crane_current = {game.cranes[working_small_crane_id].col, game.cranes[working_small_crane_id].row};
-                pair<int, int> target_pos = container;
+                Position crane_current = {game.cranes[working_small_crane_id].row, game.cranes[working_small_crane_id].col};
+                Position target_pos = container;
                 vector<Operation> go_to_picking = get_path(crane_current, target_pos, PICKING);
-                vector<Operation> go_to_releasing = get_path(target_pos, {target_pos.first, target_pos.second + 1}, RELEASING);
-                game.board[target_pos.first][target_pos.second].locker = working_small_crane_id;
+                vector<Operation> go_to_releasing = get_path(target_pos, {target_pos.row, target_pos.col + 1}, RELEASING);
+                game.board[target_pos.row][target_pos.col].locker = working_small_crane_id;
                 for (auto& op : go_to_picking) {
                     game.crane_operations[working_small_crane_id].push(op);
                 }
@@ -612,20 +633,20 @@ pull_end:
                 if (i == j) continue;
                 if (game.cranes[i].is_crushed || game.cranes[j].is_crushed) continue;
                 if (tmp_crushed.count(i) || tmp_crushed.count(j)) continue;
-                pair<int, int> current_i_pos = {game.cranes[i].col, game.cranes[i].row};
-                pair<int, int> current_j_pos = {game.cranes[j].col, game.cranes[j].row};
-                pair<int, int> next_i_pos = game.peek_next_crane_pos(i);
-                pair<int, int> next_j_pos = game.peek_next_crane_pos(j);
+                Position current_i_pos = {game.cranes[i].row, game.cranes[i].col};
+                Position current_j_pos = {game.cranes[j].row, game.cranes[j].col};
+                Position next_i_pos = game.peek_next_crane_pos(i);
+                Position next_j_pos = game.peek_next_crane_pos(j);
                 if (next_i_pos == next_j_pos) {
                     if (game.cranes[j].picking != -1) {
-                        vector<pair<int, int>> empty_arounds = game.find_empty_arounds(current_j_pos);
+                        vector<Position> empty_arounds = game.find_empty_arounds(current_j_pos);
                         vector<Operation> best_path;
                         for (auto& ea : empty_arounds) {
                             vector<Operation> path = get_path(current_j_pos, ea, RELEASING);
-                            vector<pair<int, int>> positions = simulate_path(current_j_pos, path);
+                            vector<Position> positions = simulate_path(current_j_pos, path);
                             bool found = true;
                             for (auto& pos : positions) {
-                                if (game.board[pos.first][pos.second].value != -1) {
+                                if (game.board[pos.row][pos.col].value != -1) {
                                     found = false;
                                     break;
                                 }
