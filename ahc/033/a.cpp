@@ -100,7 +100,7 @@ vector<Operation> get_path(pair<int, int> from, pair<int, int> to) {
     return path;
 }
 
-struct Board {
+struct Game {
     int n;
     vector<queue<int>> container_qs;
     vector<vector<int>> board;
@@ -108,8 +108,9 @@ struct Board {
     vector<stack<int>> container_stacks;
     vector<vector<Operation>> history;
     vector<Operation> current_operations;
+    vector<queue<Operation>> crane_operations;
 
-    Board(int n) : n(n), container_qs(n), board(n, vector<int>(n, -1)), cranes(n), container_stacks(n), current_operations(n) {
+    Game(int n) : n(n), container_qs(n), board(n, vector<int>(n, -1)), cranes(n), container_stacks(n), current_operations(n), crane_operations(n) {
         rep(i, n) {
             cranes[i].row = 0;
             cranes[i].col = i;
@@ -272,11 +273,11 @@ int main() {
     in.A.resize(in.n, vector<int>(in.n));
     rep(i, in.n) rep(j, in.n) input(in.A[i][j]);
 
-    Board board(in.n);
+    Game game(in.n);
     rep(i, in.n) rep(j, in.n) {
-        board.add_container(i, in.A[i][j]);
+        game.add_container(i, in.A[i][j]);
     }
-    board.tick(false);
+    game.tick(false);
 
     Operation op = PICK;
     for (int width = in.n - 1; width >= 2; width--) {
@@ -289,20 +290,20 @@ int main() {
             cnt++;
             rep(i, in.n) {
                 if (op == PICK) {
-                    board.pick(i);
+                    game.pick(i);
                 }
                 if (op == RIGHT) {
-                    board.move(i, RIGHT);
+                    game.move(i, RIGHT);
                 }
                 if (op == RELEASE) {
-                    board.release(i);
+                    game.release(i);
                 }
                 if (op == LEFT) {
                     if (width == 2) goto pull_end;
-                    board.move(i, LEFT);
+                    game.move(i, LEFT);
                 }
             }
-            board.tick();
+            game.tick();
         }
     }
 
@@ -311,48 +312,47 @@ pull_end:
     vector<int> requested(in.n);
     rep(i, in.n) requested[i] = i * in.n;
 
-    queue<Operation> operations;
     bool is_first = true;
     while (true) {
         if (is_first) {
             rep(i, in.n - 1) {
-                board.crush(i + 1);
+                game.crush(i + 1);
             }
             is_first = false;
         }
-        pair<int, int> crane_current = {board.cranes[0].col, board.cranes[0].row};
+        pair<int, int> crane_current = {game.cranes[0].col, game.cranes[0].row};
 
         vector<int> not_empty_cols;
         rep(i, in.n) {
-            if (board.container_qs[i].empty()) continue;
+            if (game.container_qs[i].empty()) continue;
             not_empty_cols.push_back(i);
             break;
         }
 
-        if (operations.empty() && !not_empty_cols.empty()) {
+        if (game.crane_operations[0].empty() && !not_empty_cols.empty()) {
             int not_empty_col = not_empty_cols[0];
             pair<int, int> target_pos = {not_empty_col, 0};
-            vector<pair<int, int>> empty_arounds = board.find_empty_arounds(target_pos);
+            vector<pair<int, int>> empty_arounds = game.find_empty_arounds(target_pos);
             if (!empty_arounds.empty()) {
                 vector<Operation> go_to_picking = get_path(crane_current, target_pos);
                 vector<Operation> go_to_releasing = get_path(target_pos, empty_arounds[0]);
                 for (auto& op : go_to_picking) {
-                    operations.push(op);
+                    game.crane_operations[0].push(op);
                 }
-                operations.push(PICK);
+                game.crane_operations[0].push(PICK);
                 for (auto& op : go_to_releasing) {
-                    operations.push(op);
+                    game.crane_operations[0].push(op);
                 }
-                operations.push(RELEASE);
+                game.crane_operations[0].push(RELEASE);
             }
         }
 
-        if (operations.empty()) {
+        if (game.crane_operations[0].empty()) {
             vector<tuple<int, pair<int, int>, pair<int, int>>> scores;
             rep(i, in.n) {
                 int request = requested[i];
                 if (request == -1) continue;
-                pair<int, int> target_pos = board.find_container(request);
+                pair<int, int> target_pos = game.find_container(request);
                 if (target_pos.first == -1) continue;
                 int score = manhattan(crane_current, target_pos) + manhattan(target_pos, {i, in.n - 1});
                 scores.push_back({score, target_pos, {i, in.n - 1}});
@@ -363,41 +363,41 @@ pull_end:
             vector<Operation> go_to_pulling = get_path(crane_current, target_pos_to_picking);
             vector<Operation> go_to_releasing = get_path(target_pos_to_picking, target_pos_to_releasing);
             for (auto& op : go_to_pulling) {
-                operations.push(op);
+                game.crane_operations[0].push(op);
             }
-            operations.push(PICK);
+            game.crane_operations[0].push(PICK);
             for (auto& op : go_to_releasing) {
-                operations.push(op);
+                game.crane_operations[0].push(op);
             }
-            operations.push(RELEASE);
+            game.crane_operations[0].push(RELEASE);
         }
 
-        Operation op = operations.front();
-        operations.pop();
+        Operation op = game.crane_operations[0].front();
+        game.crane_operations[0].pop();
         if (op == PICK) {
-            board.pick(0);
+            game.pick(0);
         } else if (op == UP) {
-            board.move(0, UP);
+            game.move(0, UP);
         } else if (op == DOWN) {
-            board.move(0, DOWN);
+            game.move(0, DOWN);
         } else if (op == LEFT) {
-            board.move(0, LEFT);
+            game.move(0, LEFT);
         } else if (op == RIGHT) {
-            board.move(0, RIGHT);
+            game.move(0, RIGHT);
         } else if (op == RELEASE) {
-            board.release(0);
-            if (board.cranes[0].row == in.n - 1) {
-                if (requested[board.cranes[0].col] == (board.cranes[0].col + 1) * in.n - 1) {
-                    requested[board.cranes[0].col] = -1;
+            game.release(0);
+            if (game.cranes[0].row == in.n - 1) {
+                if (requested[game.cranes[0].col] == (game.cranes[0].col + 1) * in.n - 1) {
+                    requested[game.cranes[0].col] = -1;
                 } else {
-                    requested[board.cranes[0].col]++;
+                    requested[game.cranes[0].col]++;
                 }
             }
         }
-        board.tick();
+        game.tick();
     }
 
-    for (auto& a : board.history) {
+    for (auto& a : game.history) {
         for (auto& b : a) {
             cout << to_string(b);
         }
