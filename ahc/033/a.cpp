@@ -80,21 +80,43 @@ int manhattan(pair<int, int> a, pair<int, int> b) {
 
 const pair<int, int> directions[4] = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
 
-vector<Operation> get_path(pair<int, int> from, pair<int, int> to) {
+enum PathMode {
+    PICKING,
+    RELEASING,
+};
+
+vector<Operation> get_path(pair<int, int> from, pair<int, int> to, PathMode mode) {
     vector<Operation> path;
     while (from != to) {
-        if (from.first < to.first) {
-            path.push_back(DOWN);
-            from.first++;
-        } else if (from.first > to.first) {
-            path.push_back(UP);
-            from.first--;
-        } else if (from.second < to.second) {
-            path.push_back(RIGHT);
-            from.second++;
-        } else {
-            path.push_back(LEFT);
-            from.second--;
+        if (mode == PICKING) {
+            if (from.first < to.first) {
+                path.push_back(DOWN);
+                from.first++;
+            } else if (from.first > to.first) {
+                path.push_back(UP);
+                from.first--;
+            } else if (from.second < to.second) {
+                path.push_back(RIGHT);
+                from.second++;
+            } else {
+                path.push_back(LEFT);
+                from.second--;
+            }
+        }
+        if (mode == RELEASING) {
+            if (from.second < to.second) {
+                path.push_back(RIGHT);
+                from.second++;
+            } else if (from.second > to.second) {
+                path.push_back(LEFT);
+                from.second--;
+            } else if (from.first < to.first) {
+                path.push_back(DOWN);
+                from.first++;
+            } else {
+                path.push_back(UP);
+                from.first--;
+            }
         }
     }
     return path;
@@ -331,8 +353,8 @@ pull_end:
             pair<int, int> target_pos = {not_empty_col, 0};
             vector<pair<int, int>> empty_arounds = game.find_empty_arounds(target_pos);
             if (!empty_arounds.empty()) {
-                vector<Operation> go_to_picking = get_path(crane_current, target_pos);
-                vector<Operation> go_to_releasing = get_path(target_pos, empty_arounds[0]);
+                vector<Operation> go_to_picking = get_path(crane_current, target_pos, PICKING);
+                vector<Operation> go_to_releasing = get_path(target_pos, empty_arounds[0], RELEASING);
                 for (auto& op : go_to_picking) {
                     game.crane_operations[0].push(op);
                 }
@@ -357,8 +379,8 @@ pull_end:
             sort(scores.begin(), scores.end());
             if (scores.empty()) break;
             auto [score, target_pos_to_picking, target_pos_to_releasing] = scores[0];
-            vector<Operation> go_to_pulling = get_path(crane_current, target_pos_to_picking);
-            vector<Operation> go_to_releasing = get_path(target_pos_to_picking, target_pos_to_releasing);
+            vector<Operation> go_to_pulling = get_path(crane_current, target_pos_to_picking, PICKING);
+            vector<Operation> go_to_releasing = get_path(target_pos_to_picking, target_pos_to_releasing, RELEASING);
             for (auto& op : go_to_pulling) {
                 game.crane_operations[0].push(op);
             }
