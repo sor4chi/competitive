@@ -43,6 +43,7 @@ struct Crane {
 };
 
 enum Operation {
+    STAY,     // stay
     PICK,     // pick
     UP,       // up
     DOWN,     // down
@@ -50,7 +51,6 @@ enum Operation {
     RIGHT,    // right
     RELEASE,  // release
     CRUSH,    // crush
-    STAY,     // stay
 };
 
 string to_string(Operation op) {
@@ -129,18 +129,19 @@ struct Game {
     vector<Crane> cranes;
     vector<stack<int>> container_stacks;
     vector<vector<Operation>> history;
-    vector<Operation> current_operations;
     vector<queue<Operation>> crane_operations;
+    vector<int> requested;
 
-    Game(int n) : n(n), container_qs(n), board(n, vector<int>(n, -1)), cranes(n), container_stacks(n), current_operations(n), crane_operations(n) {
+    Game(int n) : n(n), container_qs(n), board(n, vector<int>(n, -1)), cranes(n), container_stacks(n), crane_operations(n), requested(n) {
         rep(i, n) {
             cranes[i].row = 0;
             cranes[i].col = i;
             cranes[i].is_big = i == 0;
             cranes[i].picking = -1;
             cranes[i].is_crushed = false;
+            requested[i] = i * n;
+            crane_operations[i] = queue<Operation>();
         }
-        init_current_operations();
         history = vector<vector<Operation>>(n);
     }
 
@@ -152,7 +153,6 @@ struct Game {
         assert(cranes[i].picking == -1);
         cranes[i].picking = board[cranes[i].col][cranes[i].row];
         board[cranes[i].col][cranes[i].row] = -1;
-        current_operations[i] = PICK;
     }
 
     void move(int i, Operation dir) {
@@ -172,23 +172,20 @@ struct Game {
             cerr << "Crane " << i << " moved out of the board" << endl;
             assert(false);
         }
-        current_operations[i] = dir;
     }
 
     void release(int i) {
         assert(cranes[i].picking != -1);
         board[cranes[i].col][cranes[i].row] = cranes[i].picking;
         cranes[i].picking = -1;
-        current_operations[i] = RELEASE;
     }
 
     void crush(int i) {
         assert(cranes[i].picking == -1);
         cranes[i].is_crushed = true;
-        current_operations[i] = CRUSH;
     }
 
-    void tick(bool update_current_operations = true) {
+    void tick() {
         rep(i, n) {
             if (board[i][0] == -1 && !container_qs[i].empty()) {
                 board[i][0] = container_qs[i].front();
@@ -201,11 +198,43 @@ struct Game {
                 board[i][n - 1] = -1;
             }
         }
-        if (update_current_operations) {
-            rep(i, n) {
-                history[i].push_back(current_operations[i]);
+        bool all_empty = true;
+        rep(i, n) {
+            if (!crane_operations[i].empty()) {
+                all_empty = false;
+                break;
             }
-            init_current_operations();
+        }
+        if (all_empty) return;
+        rep(i, n) {
+            Operation op;
+            if (crane_operations[i].empty()) {
+                op = STAY;
+            } else {
+                op = crane_operations[i].front();
+                crane_operations[i].pop();
+            }
+            if (op == PICK) {
+                pick(i);
+            } else if (op == UP) {
+                move(i, UP);
+            } else if (op == DOWN) {
+                move(i, DOWN);
+            } else if (op == LEFT) {
+                move(i, LEFT);
+            } else if (op == RIGHT) {
+                move(i, RIGHT);
+            } else if (op == RELEASE) {
+                release(i);
+                if (cranes[i].row == n - 1) {
+                    if (requested[cranes[i].col] == (cranes[i].col + 1) * n - 1) {
+                        requested[cranes[i].col] = -1;
+                    } else {
+                        requested[cranes[i].col]++;
+                    }
+                }
+            }
+            history[i].push_back(op);
         }
     }
 
@@ -275,13 +304,6 @@ struct Game {
         }
         cerr << "END DEBUG" << endl;
     }
-
-   private:
-    void init_current_operations() {
-        rep(i, n) {
-            current_operations[i] = STAY;
-        }
-    }
 };
 
 int main() {
@@ -299,10 +321,10 @@ int main() {
     rep(i, in.n) rep(j, in.n) {
         game.add_container(i, in.A[i][j]);
     }
-    game.tick(false);
+    game.tick();
 
-    Operation op = PICK;
     for (int width = in.n - 1; width >= 2; width--) {
+        Operation op;
         int cnt = 0;
         while (cnt <= 2 * width - 1) {
             if (cnt == 0) op = PICK;
@@ -311,31 +333,16 @@ int main() {
             if (cnt > width) op = LEFT;
             cnt++;
             rep(i, in.n) {
-                if (op == PICK) {
-                    game.pick(i);
-                }
-                if (op == RIGHT) {
-                    game.move(i, RIGHT);
-                }
-                if (op == RELEASE) {
-                    game.release(i);
-                }
-                if (op == LEFT) {
-                    if (width == 2) goto pull_end;
-                    game.move(i, LEFT);
-                }
+                if (op == LEFT && width == 2 && i == 0) continue;
+                game.crane_operations[i].push(op);
             }
-            game.tick();
         }
     }
 
 pull_end:
 
-    vector<int> requested(in.n);
-    rep(i, in.n) requested[i] = i * in.n;
-
     rep(i, in.n - 1) {
-        game.crush(i + 1);
+        game.crane_operations[i + 1].push(CRUSH);
     }
 
     while (true) {
@@ -369,7 +376,7 @@ pull_end:
         if (game.crane_operations[0].empty()) {
             vector<tuple<int, pair<int, int>, pair<int, int>>> scores;
             rep(i, in.n) {
-                int request = requested[i];
+                int request = game.requested[i];
                 if (request == -1) continue;
                 pair<int, int> target_pos = game.find_container(request);
                 if (target_pos.first == -1) continue;
@@ -391,28 +398,6 @@ pull_end:
             game.crane_operations[0].push(RELEASE);
         }
 
-        Operation op = game.crane_operations[0].front();
-        game.crane_operations[0].pop();
-        if (op == PICK) {
-            game.pick(0);
-        } else if (op == UP) {
-            game.move(0, UP);
-        } else if (op == DOWN) {
-            game.move(0, DOWN);
-        } else if (op == LEFT) {
-            game.move(0, LEFT);
-        } else if (op == RIGHT) {
-            game.move(0, RIGHT);
-        } else if (op == RELEASE) {
-            game.release(0);
-            if (game.cranes[0].row == in.n - 1) {
-                if (requested[game.cranes[0].col] == (game.cranes[0].col + 1) * in.n - 1) {
-                    requested[game.cranes[0].col] = -1;
-                } else {
-                    requested[game.cranes[0].col]++;
-                }
-            }
-        }
         game.tick();
     }
 
