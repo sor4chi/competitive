@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fmt;
 
 use proconio::input;
@@ -44,6 +44,13 @@ impl Direction {
     }
 }
 
+const DIRECTIONS: [Direction; 4] = [
+    Direction::Up,
+    Direction::Down,
+    Direction::Left,
+    Direction::Right,
+];
+
 #[derive(Clone, PartialEq, Debug)]
 enum Operation {
     Stay,
@@ -70,7 +77,7 @@ impl fmt::Display for Operation {
 
 fn get_direct_path(p1: &Position, p2: &Position) -> Vec<Direction> {
     let mut path = Vec::new();
-    let mut current = p1.clone();
+    let mut current = *p1;
     while current.row != p2.row {
         if current.row < p2.row {
             path.push(Direction::Down);
@@ -92,10 +99,32 @@ fn get_direct_path(p1: &Position, p2: &Position) -> Vec<Direction> {
     path
 }
 
-fn simulate_path(p1: &Position, path: &[Direction]) -> Vec<Position> {
+fn simulate_operations(p1: &Position, operations: Vec<Operation>) -> Vec<Position> {
     let mut positions = Vec::new();
-    let mut current = p1.clone();
-    positions.push(current.clone());
+    let mut current = *p1;
+    positions.push(current);
+    for operation in operations {
+        match operation {
+            Operation::Stay => {}
+            Operation::Move(direction) => match direction {
+                Direction::Up => current.row -= 1,
+                Direction::Down => current.row += 1,
+                Direction::Left => current.col -= 1,
+                Direction::Right => current.col += 1,
+            },
+            Operation::Hold => {}
+            Operation::Release => {}
+            Operation::Crush => {}
+        }
+        positions.push(current);
+    }
+    positions
+}
+
+fn simulate_path(p1: &Position, path: Vec<Direction>) -> Vec<Position> {
+    let mut positions = Vec::new();
+    let mut current = *p1;
+    positions.push(current);
     for direction in path {
         match direction {
             Direction::Up => current.row -= 1,
@@ -103,7 +132,7 @@ fn simulate_path(p1: &Position, path: &[Direction]) -> Vec<Position> {
             Direction::Left => current.col -= 1,
             Direction::Right => current.col += 1,
         }
-        positions.push(current.clone());
+        positions.push(current);
     }
     positions
 }
@@ -148,6 +177,7 @@ struct Game {
     small_crane: HashMap<usize, Crane>,
     requests: Vec<Option<usize>>,
     history: Vec<Vec<Operation>>,
+    timing_slots: Vec<Vec<BTreeSet<usize>>>,
 }
 
 impl fmt::Debug for Game {
@@ -172,6 +202,23 @@ impl fmt::Debug for Game {
         writeln!(f, "  big_crane: {:?}", self.big_crane)?;
         writeln!(f, "  small_crane: {:?}", self.small_crane)?;
         writeln!(f, "  requests: {:?}", self.requests)?;
+        writeln!(f, "  timing: {:?}", self.timing_slots)?;
+        writeln!(f, "  latest_timing:")?;
+        for row in 0..self.n {
+            write!(f, " ")?;
+            for col in 0..self.n {
+                write!(
+                    f,
+                    " {}",
+                    if let Some(timing) = self.timing_slots[row][col].iter().next() {
+                        format!("{:>2}", timing)
+                    } else {
+                        "-1".to_string()
+                    }
+                )?;
+            }
+            writeln!(f)?;
+        }
         writeln!(f, "}}")?;
         writeln!(f, "Answer:")?;
         writeln!(f, "{}", self.answer())
@@ -207,6 +254,7 @@ impl Game {
         });
         let requests = (0..n).map(|i| Some(i * n)).collect();
         let history = vec![vec![]; n];
+        let timing_slots = vec![vec![BTreeSet::new(); n]; n];
         Self {
             n,
             board,
@@ -216,6 +264,7 @@ impl Game {
             small_crane,
             requests,
             history,
+            timing_slots,
         }
     }
 
@@ -277,7 +326,7 @@ impl Game {
     fn hold(&mut self, crane_id: usize) -> Result<(), &str> {
         // クレーンが存在しない場合はエラー
         let crane = self.get_crane(crane_id).ok_or("Invalid crane ID")?;
-        let pos = crane.pos.clone();
+        let pos = crane.pos;
 
         // 既に値を持っている場合はエラー
         if crane.holding.is_some() {
@@ -390,6 +439,20 @@ impl Game {
             .unwrap_or(true)
     }
 
+    // col+1が空いているセルをfloating_positionとして探す
+    fn get_floating_positions(&self) -> Vec<Position> {
+        let mut floating_positions = Vec::new();
+        for row in 0..self.n {
+            for col in 0..self.n - 2 {
+                if self.board[row][col].value.is_some() && self.board[row][col + 1].value.is_none()
+                {
+                    floating_positions.push(Position::new(row, col));
+                }
+            }
+        }
+        floating_positions
+    }
+
     fn find_empty_cells(&self, pos: &Position) -> Vec<Position> {
         let mut empty_cells = Vec::new();
         for row in 0..self.n {
@@ -401,6 +464,115 @@ impl Game {
         }
         empty_cells.sort_by_key(|empty_pos| manhattan_distance(pos, empty_pos));
         empty_cells
+    }
+
+    // timing_slotsを使って衝突を避けるようなpathを生成して返す
+    fn get_escape_path(&self, from: &Position, to: &Position) -> Vec<Direction> {
+        // BFS
+        struct BFSNode {
+            pos: Position,
+            dist: usize,
+        }
+        let mut queue = VecDeque::new();
+        let mut visited = vec![vec![false; self.n]; self.n];
+        let mut dist = vec![vec![std::usize::MAX; self.n]; self.n];
+        queue.push_back(BFSNode {
+            pos: *from,
+            dist: 0,
+        });
+        visited[from.row][from.col] = true;
+        dist[from.row][from.col] = 0;
+        while let Some(node) = queue.pop_front() {
+            if node.pos == *to {
+                break;
+            }
+
+            for direction in &DIRECTIONS {
+                let next_pos = match direction {
+                    Direction::Up => {
+                        if node.pos.row == 0 {
+                            continue;
+                        }
+                        Position::new(node.pos.row - 1, node.pos.col)
+                    }
+                    Direction::Down => {
+                        if node.pos.row == self.n - 1 {
+                            continue;
+                        }
+                        Position::new(node.pos.row + 1, node.pos.col)
+                    }
+                    Direction::Left => {
+                        if node.pos.col == 0 {
+                            continue;
+                        }
+                        Position::new(node.pos.row, node.pos.col - 1)
+                    }
+                    Direction::Right => {
+                        if node.pos.col == self.n - 1 {
+                            continue;
+                        }
+                        Position::new(node.pos.row, node.pos.col + 1)
+                    }
+                };
+                let next_dist = node.dist + 1;
+                if visited[next_pos.row][next_pos.col] {
+                    continue;
+                }
+                if self.timing_slots[next_pos.row][next_pos.col].contains(&next_dist) {
+                    continue;
+                }
+                visited[next_pos.row][next_pos.col] = true;
+                dist[next_pos.row][next_pos.col] = next_dist;
+                queue.push_back(BFSNode {
+                    pos: next_pos,
+                    dist: next_dist,
+                });
+            }
+        }
+        let mut current = *to;
+        let mut path = Vec::new();
+        let mut current_dist = dist[current.row][current.col];
+        while current != *from {
+            for direction in &DIRECTIONS {
+                let next_pos = match direction {
+                    Direction::Up => {
+                        if current.row == 0 {
+                            continue;
+                        }
+                        Position::new(current.row - 1, current.col)
+                    }
+                    Direction::Down => {
+                        if current.row == self.n - 1 {
+                            continue;
+                        }
+                        Position::new(current.row + 1, current.col)
+                    }
+                    Direction::Left => {
+                        if current.col == 0 {
+                            continue;
+                        }
+                        Position::new(current.row, current.col - 1)
+                    }
+                    Direction::Right => {
+                        if current.col == self.n - 1 {
+                            continue;
+                        }
+                        Position::new(current.row, current.col + 1)
+                    }
+                };
+                if next_pos.row >= self.n || next_pos.col >= self.n {
+                    continue;
+                }
+                if dist[next_pos.row][next_pos.col] == current_dist - 1 {
+                    path.push(direction.reverse());
+                    current = next_pos;
+                    current_dist -= 1;
+                    break;
+                }
+            }
+        }
+        path.reverse();
+        path
     }
 
     fn tick(&mut self) {
@@ -459,6 +631,19 @@ impl Game {
                 }
             }
         });
+        // timing_slotsを更新
+        (0..self.n).for_each(|row| {
+            (0..self.n).for_each(|col| {
+                let timing_slots = self.timing_slots[row][col].clone();
+                self.timing_slots[row][col].clear();
+                timing_slots.iter().for_each(|timing| {
+                    // timingを1減らす
+                    if *timing > 0 {
+                        self.timing_slots[row][col].insert(timing - 1);
+                    }
+                });
+            });
+        });
     }
 
     fn answer(&self) -> String {
@@ -489,22 +674,30 @@ fn main() {
         for row in 0..input.n {
             let mut operations = Vec::new();
             operations.push(Operation::Hold);
-            get_direct_path(&game.get_crane(row).unwrap().pos, &Position::new(row, col))
+            let start_pos = game.get_crane(row).unwrap().pos;
+            let hold_pos = Position::new(row, col);
+            let start_col = if col == 1 { 1 } else { 0 };
+            let release_pos = Position::new(row, start_col);
+            get_direct_path(&start_pos, &hold_pos)
                 .iter()
                 .for_each(|direction| {
                     operations.push(Operation::Move(direction.clone()));
                 });
             operations.push(Operation::Release);
-            let start_col = if col == 1 { 1 } else { 0 };
-            get_direct_path(&Position::new(row, col), &Position::new(row, start_col))
+            get_direct_path(&hold_pos, &release_pos)
                 .iter()
                 .for_each(|direction| {
                     operations.push(Operation::Move(direction.clone()));
                 });
+            let path_positions = simulate_operations(&start_pos, operations.clone());
             operations.iter().for_each(|operation| {
                 game.add_operation(row, operation.clone()).unwrap();
             });
-            if row == 0 {
+            assert_eq!(path_positions.len(), operations.len() + 1);
+            for (i, path_pos) in path_positions.iter().enumerate() {
+                game.timing_slots[path_pos.row][path_pos.col].insert(times + i);
+            }
+            if row == input.n - 1 {
                 times += operations.len();
             }
         }
@@ -514,54 +707,62 @@ fn main() {
         game.tick();
     }
 
-    for i in 1..input.n {
+    for i in 2..input.n {
         game.add_operation(i, Operation::Crush).unwrap();
     }
 
     while !game.is_request_completed() {
-        let mut help_needed = Vec::new();
-        for row in 0..input.n {
-            if !game.input_queues[row].is_empty() && game.board[row][0].value.is_some() {
-                help_needed.push(row);
-            }
-        }
-
-        if game.is_crane_operations_empty(0) && !help_needed.is_empty() {
-            let big_crane = game.big_crane.as_ref().unwrap();
+        if game.is_crane_operations_empty(1) {
+            let small_crane = game.small_crane.get(&1).unwrap();
+            let floating_positions = game.get_floating_positions();
             let mut min_distance = std::usize::MAX;
-            let mut min_holding_pos = None;
+            let mut min_hold_pos = None;
             let mut min_release_pos = None;
-            for row in help_needed {
-                let holding_pos = Position::new(row, 0);
-                let empty_cells = game.find_empty_cells(&holding_pos);
-                if empty_cells.is_empty() {
-                    continue;
+            for floating_pos in floating_positions {
+                let mut release_pos = floating_pos;
+                // マスが空いている限り右にrelease_posを移動
+                while game.board[release_pos.row][release_pos.col + 1]
+                    .value
+                    .is_none()
+                    && release_pos.col + 1 < input.n - 1
+                {
+                    release_pos.col += 1;
                 }
-                let release_pos = empty_cells[0];
-                let distance = manhattan_distance(&big_crane.pos, &holding_pos)
-                    + manhattan_distance(&holding_pos, &release_pos);
+                eprintln!(
+                    "floating_pos: {:?}, release_pos: {:?}",
+                    floating_pos, release_pos
+                );
+                let distance = manhattan_distance(&small_crane.pos, &floating_pos)
+                    + manhattan_distance(&floating_pos, &release_pos);
                 if distance < min_distance {
                     min_distance = distance;
-                    min_holding_pos = Some(holding_pos);
+                    min_hold_pos = Some(floating_pos);
                     min_release_pos = Some(release_pos);
                 }
             }
-            if let (Some(min_holding_pos), Some(min_release_pos)) =
-                (min_holding_pos, min_release_pos)
-            {
-                let holding_path = get_direct_path(&big_crane.pos, &min_holding_pos);
-                let release_path = get_direct_path(&min_holding_pos, &min_release_pos);
-                for direction in holding_path {
-                    game.add_operation(0, Operation::Move(direction)).unwrap();
+            if let (Some(min_hold_pos), Some(min_release_pos)) = (min_hold_pos, min_release_pos) {
+                let hold_path = game.get_escape_path(&small_crane.pos, &min_hold_pos);
+                let release_path = game.get_escape_path(&min_hold_pos, &min_release_pos);
+                let mut operations = Vec::new();
+                for direction in hold_path {
+                    operations.push(Operation::Move(direction));
                 }
-                game.add_operation(0, Operation::Hold).unwrap();
+                operations.push(Operation::Hold);
                 for direction in release_path {
-                    game.add_operation(0, Operation::Move(direction)).unwrap();
+                    operations.push(Operation::Move(direction));
                 }
-                game.add_operation(0, Operation::Release).unwrap();
+                operations.push(Operation::Release);
+                let path_positions = simulate_operations(&small_crane.pos, operations.clone());
+                operations.iter().for_each(|operation| {
+                    game.add_operation(1, operation.clone()).unwrap();
+                });
+                assert_eq!(path_positions.len(), operations.len() + 1);
+                for (i, path_pos) in path_positions.iter().enumerate() {
+                    game.timing_slots[path_pos.row][path_pos.col].insert(i);
+                }
             }
         }
-
+        
         if game.is_crane_operations_empty(0) {
             let big_crane = game.big_crane.as_ref().unwrap();
             // game.requestsの値の中で、盤面に存在する値を持っているクレーンを探し、一番近いものを探す
@@ -583,20 +784,31 @@ fn main() {
                 }
             }
             if let (Some(min_hold_pos), Some(min_release_pos)) = (min_hold_pos, min_release_pos) {
-                let hold_path = get_direct_path(&big_crane.pos, &min_hold_pos);
-                let release_path = get_direct_path(&min_hold_pos, &min_release_pos);
+                let hold_path = game.get_escape_path(&big_crane.pos, &min_hold_pos);
+                let release_path = game.get_escape_path(&min_hold_pos, &min_release_pos);
+                let mut operations = Vec::new();
                 for direction in hold_path {
-                    game.add_operation(0, Operation::Move(direction)).unwrap();
+                    operations.push(Operation::Move(direction));
                 }
-                game.add_operation(0, Operation::Hold).unwrap();
+                operations.push(Operation::Hold);
                 for direction in release_path {
-                    game.add_operation(0, Operation::Move(direction)).unwrap();
+                    operations.push(Operation::Move(direction));
                 }
-                game.add_operation(0, Operation::Release).unwrap();
+                operations.push(Operation::Release);
+                let path_positions = simulate_operations(&big_crane.pos, operations.clone());
+                operations.iter().for_each(|operation| {
+                    game.add_operation(0, operation.clone()).unwrap();
+                });
+                assert_eq!(path_positions.len(), operations.len() + 1);
+                for (i, path_pos) in path_positions.iter().enumerate() {
+                    game.timing_slots[path_pos.row][path_pos.col].insert(i);
+                }
             }
         }
 
+
         game.tick();
+        eprintln!("{:?}", game);
     }
 
     println!("{}", game.answer());
@@ -663,21 +875,21 @@ mod tests {
         let p1 = Position::new(0, 0);
         let path = vec![Direction::Right];
         assert_eq!(
-            simulate_path(&p1, &path),
+            simulate_path(&p1, path),
             vec![Position::new(0, 0), Position::new(0, 1)]
         );
 
         let p1 = Position::new(0, 0);
         let path = vec![Direction::Down];
         assert_eq!(
-            simulate_path(&p1, &path),
+            simulate_path(&p1, path),
             vec![Position::new(0, 0), Position::new(1, 0)]
         );
 
         let p1 = Position::new(0, 0);
         let path = vec![Direction::Down, Direction::Right];
         assert_eq!(
-            simulate_path(&p1, &path),
+            simulate_path(&p1, path),
             vec![
                 Position::new(0, 0),
                 Position::new(1, 0),
@@ -688,7 +900,7 @@ mod tests {
         let p1 = Position::new(0, 0);
         let path = vec![Direction::Down, Direction::Right, Direction::Right];
         assert_eq!(
-            simulate_path(&p1, &path),
+            simulate_path(&p1, path),
             vec![
                 Position::new(0, 0),
                 Position::new(1, 0),
@@ -922,7 +1134,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tick() {
+    fn test_tick_board_update() {
         let input = Input {
             n: 3,
             a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
@@ -962,6 +1174,41 @@ mod tests {
     }
 
     #[test]
+    fn test_tick_crane_operations() {
+        let input = Input {
+            n: 3,
+            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+        };
+        let mut game = Game::new(&input);
+
+        assert_eq!(game.board[0][0].value, None);
+        game.tick();
+
+        // クレーン0が今いるマスの値を持ち上げる
+        game.add_operation(0, Operation::Hold).unwrap();
+        // クレーン0が持ち上げた値を右に移動する
+        game.add_operation(0, Operation::Move(Direction::Right))
+            .unwrap();
+        // クレーン0が持ち上げた値を置く
+        game.add_operation(0, Operation::Release).unwrap();
+
+        assert_eq!(game.board[0][0].value, Some(1));
+        game.tick();
+        // 次のinputが入る
+        assert_eq!(game.board[0][0].value, Some(2));
+        assert_eq!(game.get_crane(0).unwrap().holding, Some(1));
+        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(0, 0));
+        game.tick();
+        assert_eq!(game.board[0][1].value, None);
+        assert_eq!(game.get_crane(0).unwrap().holding, Some(1));
+        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(0, 1));
+        game.tick();
+        assert_eq!(game.board[0][1].value, Some(1));
+        assert_eq!(game.get_crane(0).unwrap().holding, None);
+        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(0, 1));
+    }
+
+    #[test]
     fn test_find_value() {
         let input = Input {
             n: 3,
@@ -988,13 +1235,13 @@ mod tests {
         };
         let mut game = Game::new(&input);
 
-        assert_eq!(game.is_request_completed(), false);
+        assert!(!game.is_request_completed());
 
         game.requests[0] = None;
         game.requests[1] = None;
         game.requests[2] = None;
 
-        assert_eq!(game.is_request_completed(), true);
+        assert!(game.is_request_completed());
     }
 
     #[test]
@@ -1005,12 +1252,12 @@ mod tests {
         };
         let mut game = Game::new(&input);
 
-        assert_eq!(game.is_crane_operations_empty(0), true);
+        assert!(game.is_crane_operations_empty(0));
 
         game.add_operation(0, Operation::Move(Direction::Down))
             .unwrap();
 
-        assert_eq!(game.is_crane_operations_empty(0), false);
+        assert!(!game.is_crane_operations_empty(0));
     }
 
     #[test]
@@ -1035,5 +1282,113 @@ mod tests {
         assert_eq!(empty_cells[0], Position::new(0, 0));
         assert_eq!(empty_cells[1], Position::new(1, 1));
         // 右端は空いていても無視される
+    }
+
+    #[test]
+    fn test_get_floating_positions() {
+        let input = Input {
+            n: 3,
+            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+        };
+        let game = Game::new(&input);
+
+        let floating_positions = game.get_floating_positions();
+        assert_eq!(floating_positions.len(), 0);
+
+        let mut game = Game::new(&input);
+        game.board[0][0].value = Some(1);
+        game.board[0][1].value = Some(2);
+        game.board[0][2].value = None;
+        game.board[1][0].value = Some(4);
+        game.board[1][1].value = Some(5);
+        game.board[1][2].value = None;
+        game.board[2][0].value = Some(7);
+        game.board[2][1].value = Some(8);
+        game.board[2][2].value = None;
+
+        let floating_positions = game.get_floating_positions();
+        assert_eq!(floating_positions.len(), 0);
+
+        game.board[0][0].value = None;
+        game.board[0][1].value = None;
+        game.board[0][2].value = None;
+        game.board[1][0].value = None;
+        game.board[1][1].value = None;
+        game.board[1][2].value = None;
+        game.board[2][0].value = None;
+        game.board[2][1].value = None;
+        game.board[2][2].value = None;
+
+        let floating_positions = game.get_floating_positions();
+        assert_eq!(floating_positions.len(), 0);
+
+        game.board[0][0].value = Some(1);
+        game.board[0][1].value = None;
+        game.board[0][2].value = Some(3);
+        game.board[1][0].value = None;
+        game.board[1][1].value = Some(5);
+        game.board[1][2].value = None;
+        game.board[2][0].value = Some(7);
+        game.board[2][1].value = None;
+        game.board[2][2].value = Some(9);
+
+        let floating_positions = game.get_floating_positions();
+        assert_eq!(floating_positions.len(), 2);
+        assert_eq!(floating_positions[0], Position::new(0, 0));
+        assert_eq!(floating_positions[1], Position::new(2, 0));
+    }
+
+    #[test]
+    fn test_get_escape_path() {
+        let input = Input {
+            n: 3,
+            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+        };
+
+        let from = Position::new(0, 0);
+        let to = Position::new(0, 2);
+
+        // timing_slotsが空の場合は直線的なpathが返る
+        let game = Game::new(&input);
+        let path = game.get_escape_path(&from, &to);
+        assert_eq!(path, vec![Direction::Right, Direction::Right]);
+
+        // timing_slotsが埋まっている場合は避けるようなpathが返る
+        let mut game = Game::new(&input);
+        game.timing_slots[0][1].insert(1);
+        let path = game.get_escape_path(&from, &to);
+        assert_eq!(
+            path,
+            vec![
+                Direction::Down,
+                Direction::Right,
+                Direction::Right,
+                Direction::Up
+            ]
+        );
+
+        // 複雑なケース
+        let input = Input {
+            n: 5,
+            a: vec![
+                vec![1, 2, 3, 4, 5],
+                vec![6, 7, 8, 9, 10],
+                vec![11, 12, 13, 14, 15],
+                vec![16, 17, 18, 19, 20],
+                vec![21, 22, 23, 24, 25],
+            ],
+        };
+        let mut game = Game::new(&input);
+        let dummy_from = Position::new(0, 4);
+        let dummy_to = Position::new(0, 0);
+        let path = get_direct_path(&dummy_from, &dummy_to);
+        let path_positions = simulate_path(&dummy_from, path);
+        for (i, path_pos) in path_positions.iter().enumerate() {
+            game.timing_slots[path_pos.row][path_pos.col].insert(i);
+        }
+        let from = Position::new(0, 0);
+        let to = Position::new(4, 4);
+        let path = game.get_escape_path(&from, &to);
+        assert_eq!(path, vec![]);
     }
 }
