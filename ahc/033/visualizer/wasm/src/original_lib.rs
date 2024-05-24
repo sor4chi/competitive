@@ -1,10 +1,12 @@
 #![allow(non_snake_case, unused_macros)]
 
 use itertools::Itertools;
-use proconio::input;
+use proconio::{input, source::once::OnceSource};
 use rand::prelude::*;
-use std::ops::RangeBounds;
+use std::{collections::HashMap, ops::RangeBounds};
 use svg::node::element::{Group, Line, Rectangle, Style, Symbol, Text, Title, Use};
+use web_sys::console;
+extern crate web_sys;
 
 pub trait SetMinMax {
     fn setmin(&mut self, v: Self) -> bool;
@@ -83,12 +85,80 @@ pub fn read<T: Copy + PartialOrd + std::fmt::Display + std::str::FromStr, R: Ran
 
 pub struct Output {
     pub out: Vec<Vec<char>>,
+    pub lock: HashMap<usize, Vec<Vec<Option<usize>>>>,
+    pub timing: HashMap<usize, Vec<Vec<Option<Vec<usize>>>>>,
 }
 
 pub fn parse_output(input: &Input, f: &str) -> Result<Output, String> {
-    let out = f
-        .trim()
-        .lines()
+    // 末尾input.n個以外を取得
+    let header = f.lines().take(f.lines().count() - input.n).collect_vec();
+    // 6行ごとに分割
+    let iter = header.chunks(6);
+    // 最初の行は "lock, turn: [0-9]+", 2行目以降は Vec<Vec<char>>
+    // 繰り返しproconioで読む
+    let mut lock = HashMap::new();
+    let mut timing = HashMap::new();
+    for chunk in iter {
+        let source = OnceSource::from(chunk[0]);
+        let out = chunk[1..].iter().map(|s| s.to_string()).join("\n");
+        input! {
+            from source,
+            header: String,
+        }
+        // もしheaderがlock,turn:[0-9]+であれば
+        if header.starts_with("lock,turn:") {
+            // turnの情報を取得
+            let turn = header.split(':').nth(1).unwrap().parse::<usize>().unwrap();
+            let source = OnceSource::from(out.as_str());
+            input! {
+                from source,
+                out: [[char; input.n]; input.n],
+            }
+            // lockの情報を取得
+            let mut lock_info = vec![vec![None; input.n]; input.n];
+            for i in 0..input.n {
+                for j in 0..input.n {
+                    let token = out[i][j].to_string();
+                    if token != "." {
+                        lock_info[i][j] = Some(token.parse::<usize>().unwrap());
+                    }
+                }
+            }
+
+            lock.entry(turn).or_insert(lock_info);
+        }
+        // もしheaderがtiming,turn:[0-9]+であれば
+        if header.starts_with("timing,turn:") {
+            // turnの情報を取得
+            let turn: usize = header.split(':').nth(1).unwrap().parse::<usize>().unwrap();
+            let source = OnceSource::from(out.as_str());
+            input! {
+                from source,
+                out: [[String; input.n]; input.n],
+            }
+            // timingの情報を取得
+            let mut timing_info = vec![vec![None; input.n]; input.n];
+            for i in 0..input.n {
+                for j in 0..input.n {
+                    let token = &out[i][j];
+                    if token != "." {
+                        timing_info[i][j] = Some(
+                            token
+                                .split(',')
+                                .map(|s| s.parse::<usize>().unwrap())
+                                .collect::<Vec<usize>>(),
+                        );
+                    }
+                }
+            }
+
+            timing.entry(turn).or_insert(timing_info);
+        }
+    }
+
+    let footer = f.lines().skip(f.lines().count() - input.n).collect_vec();
+    let out = footer
+        .into_iter()
         .map(|s| s.trim().chars().collect_vec())
         .collect_vec();
     if out.len() != input.A.len() {
@@ -97,7 +167,7 @@ pub fn parse_output(input: &Input, f: &str) -> Result<Output, String> {
     if out.iter().any(|s| s.len() == 0 || s.len() > 10000) {
         return Err("Illegal output length".to_owned());
     }
-    Ok(Output { out })
+    Ok(Output { out, lock, timing })
 }
 
 pub fn gen(seed: u64) -> Input {
@@ -327,6 +397,17 @@ pub fn rect(x: usize, y: usize, w: usize, h: usize, fill: &str) -> Rectangle {
         .set("fill", fill)
 }
 
+pub fn border(x: usize, y: usize, w: usize, h: usize, stroke: &str) -> Rectangle {
+    Rectangle::new()
+        .set("x", x)
+        .set("y", y)
+        .set("width", w)
+        .set("height", h)
+        .set("stroke", stroke)
+        .set("stroke-width", 2)
+        .set("fill", "none")
+}
+
 pub fn group(title: String) -> Group {
     Group::new().add(Title::new(title))
 }
@@ -502,5 +583,44 @@ pub fn vis(input: &Input, out: &Output, t: usize) -> (i64, String, String) {
             }
         }
     }
+
+    if let Some(lock) = out.lock.get(&t) {
+        for i in 0..state.n {
+            for j in 0..state.n {
+                if let Some(k) = lock[i][j] {
+                    doc =
+                        doc.add(border(D * (1 + j), S + D * i, D, D, "red").set("fill-opacity", 1));
+                    // 右上に数字を表示
+                    doc = doc.add(
+                        Text::new(format!("{}", k))
+                            .set("x", D * (1 + j) + D - 10)
+                            .set("y", S + D * i + 10)
+                            .set("font-size", 20)
+                            .set("fill", "red"),
+                    );
+                }
+            }
+        }
+    }
+
+    if let Some(timing) = out.timing.get(&t) {
+        for i in 0..state.n {
+            for j in 0..state.n {
+                if let Some(k) = &timing[i][j] {
+                    for (l, m) in k.iter().copied().enumerate() {
+                        // 左上に数字を表示
+                        doc = doc.add(
+                            Text::new(format!("{}", m))
+                                .set("x", D * (1 + j) + 10)
+                                .set("y", S + D * i + 10 + 20 * l)
+                                .set("font-size", 20)
+                                .set("fill", "blue"),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     (score, err, doc.to_string())
 }

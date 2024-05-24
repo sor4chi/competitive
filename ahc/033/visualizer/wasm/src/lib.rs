@@ -2,7 +2,7 @@ mod original_lib;
 use wasm_bindgen::prelude::*;
 
 use crate::original_lib::gen as original_gen;
-use original_lib::{parse_input, parse_output, vis_default, Output};
+use original_lib::{parse_input, parse_output, vis as original_vis};
 
 #[wasm_bindgen]
 pub fn gen(seed: i32) -> String {
@@ -22,30 +22,10 @@ pub fn vis(_input: String, _output: String, turn: usize) -> Ret {
     let input = parse_input(_input.as_str());
     let output = parse_output(&input, _output.as_str());
     let (score, err, svg) = match output {
-        Ok(out) => {
-            let out = Output {
-                out: out
-                    .out
-                    .iter()
-                    .map(|x| x.iter().take(turn).copied().collect())
-                    .collect(),
-            };
-            vis_default(&input, &out)
-        }
+        Ok(out) => original_vis(&input, &out, turn),
         Err(err) => (0, err, String::new()),
     };
-    if !err.is_empty() {
-        println!("{}", err);
-        println!("Score = {}", 0);
-        Ret { score: 0, err, svg }
-    } else {
-        println!("Score = {}", score);
-        Ret {
-            score,
-            err: "".to_string(),
-            svg,
-        }
-    }
+    Ret { score, err, svg }
 }
 
 #[wasm_bindgen]
