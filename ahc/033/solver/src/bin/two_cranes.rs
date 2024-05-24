@@ -64,48 +64,7 @@ fn main() {
     }
 
     while !game.is_request_completed() {
-        if game.is_crane_operations_empty(CraneId(0))
-            && game.is_crane_operations_empty(CraneId(1))
-            && game.big_crane.is_some()
-            && game.small_crane.contains_key(&CraneId(1))
-        {
-            // 盤面上に残り何個のコンテナがあるか
-            let remaining_containers = game
-                .board
-                .iter()
-                .map(|row| row.iter().filter(|cell| cell.value.is_some()).count())
-                .sum::<usize>();
-            if remaining_containers == 1 {
-                // そのコンテナの位置を取得
-                let remaining_container_pos = game
-                    .board
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(row, cells)| {
-                        cells.iter().enumerate().filter_map(move |(col, cell)| {
-                            if cell.value.is_some() {
-                                Some(Position::new(row, col))
-                            } else {
-                                None
-                            }
-                        })
-                    })
-                    .next()
-                    .unwrap();
-                // 距離の遠い方のクレーンを破壊
-                let big_crane = game.big_crane.as_ref().unwrap();
-                let small_crane = game.small_crane.get(&CraneId(1)).unwrap();
-                let big_distance = manhattan_distance(&big_crane.pos, &remaining_container_pos);
-                let small_distance = manhattan_distance(&small_crane.pos, &remaining_container_pos);
-                if big_distance > small_distance {
-                    game.add_operation(CraneId(0), Operation::Crush).unwrap();
-                } else {
-                    game.add_operation(CraneId(1), Operation::Crush).unwrap();
-                }
-            }
-        }
-
-        if game.is_crane_operations_empty(CraneId(0)) && game.get_crane(CraneId(0)).is_some() {
+        if game.is_crane_operations_empty(CraneId(0)) {
             let big_crane = game.big_crane.as_ref().unwrap();
             // game.requestsの値の中で、盤面に存在する値を持っているクレーンを探し、一番近いものを探す
             let mut min_distance = std::usize::MAX;
@@ -206,7 +165,7 @@ fn main() {
             }
         }
 
-        if game.is_crane_operations_empty(CraneId(1)) && game.get_crane(CraneId(1)).is_some() {
+        if game.is_crane_operations_empty(CraneId(1)) {
             let floating_positions = game.get_floating_positions();
 
             // 複数試すようにする
