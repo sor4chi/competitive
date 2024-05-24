@@ -5,3 +5,7 @@ edition = "2021"
 
 [dependencies]
 proconio = "0.4.5"
+
+[[bin]]
+name = "two_cranes"
+path = "src/bin/two_cranes.rs"

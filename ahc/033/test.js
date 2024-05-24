@@ -5,7 +5,7 @@ import { execSync } from "node:child_process";
 const glob = new Glob("tools/in/*.txt");
 await $`cd tools && cargo run -r --bin gen seeds.txt`;
 // await $`g++ ./a.cpp -o ./a.out`;
-await $`cd solver && cargo build --release && cp ./target/release/solver ../a.out`;
+await $`cd solver && cargo build --release --bin two_cranes && cp ./target/release/solver ../a.out`;
 
 const reports = [];
 
