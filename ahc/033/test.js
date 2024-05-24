@@ -1,11 +1,14 @@
 import { $, Glob, file, write } from "bun";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rmdir } from "node:fs/promises";
 import { execSync } from "node:child_process";
 
 const glob = new Glob("tools/in/*.txt");
 await $`cd tools && cargo run -r --bin gen seeds.txt`;
 // await $`g++ ./a.cpp -o ./a.out`;
-await $`cd solver && cargo build --release --bin two_cranes && cp ./target/release/solver ../a.out`;
+await $`cd solver && cargo build --release --bin two_cranes && cp ./target/release/two_cranes ../a.out`;
+
+await rmdir("tools/out", { recursive: true });
+await mkdir("tools/out", { recursive: true });
 
 const reports = [];
 
@@ -21,7 +24,7 @@ const pathStatus = {
 
 for (const path of sortedPaths) {
   console.log(path);
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
   const input = await file(path).text();
   const filename = path.split("/").pop();
   try {

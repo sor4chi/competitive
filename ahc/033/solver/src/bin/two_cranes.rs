@@ -94,43 +94,48 @@ fn main() {
                     "CRANE 0 current: {:?} hold: {:?} release: {:?}",
                     big_crane.pos, min_hold_pos, min_release_pos
                 );
-                let hold_path = game
-                    .get_escape_path(&big_crane.pos, &min_hold_pos, EscapeMode::Flying, 0)
-                    .unwrap();
-                let release_path = game
-                    .get_escape_path(
+                let hold_path =
+                    game.get_escape_path(&big_crane.pos, &min_hold_pos, EscapeMode::Flying, 0);
+                if hold_path.is_ok() {
+                    let hold_path = hold_path.unwrap();
+                    let release_path = game.get_escape_path(
                         &min_hold_pos,
                         &min_release_pos,
                         EscapeMode::Flying,
                         hold_path.len(),
-                    )
-                    .unwrap();
-                let mut operations = Vec::new();
-                for direction in hold_path {
-                    operations.push(Operation::Move(direction));
-                }
-                operations.push(Operation::Hold);
-                for direction in release_path {
-                    operations.push(Operation::Move(direction));
-                }
-                operations.push(Operation::Release);
-                let path_positions = simulate_operations(&big_crane.pos, operations.clone());
-                assert_eq!(path_positions.len(), operations.len() + 1);
-                let mut is_conflicted = false;
-                for (i, path_pos) in path_positions.iter().enumerate() {
-                    if game.timing_slots[path_pos.row][path_pos.col].contains(&i) && i != 0 {
-                        is_conflicted = true;
-                        break;
+                    );
+                    if release_path.is_ok() {
+                        let release_path = release_path.unwrap();
+                        let mut operations = Vec::new();
+                        for direction in hold_path {
+                            operations.push(Operation::Move(direction));
+                        }
+                        operations.push(Operation::Hold);
+                        for direction in release_path {
+                            operations.push(Operation::Move(direction));
+                        }
+                        operations.push(Operation::Release);
+                        let path_positions =
+                            simulate_operations(&big_crane.pos, operations.clone());
+                        assert_eq!(path_positions.len(), operations.len() + 1);
+                        let mut is_conflicted = false;
+                        for (i, path_pos) in path_positions.iter().enumerate() {
+                            if game.timing_slots[path_pos.row][path_pos.col].contains(&i) && i != 0
+                            {
+                                is_conflicted = true;
+                                break;
+                            }
+                        }
+                        if !is_conflicted {
+                            for (i, path_pos) in path_positions.iter().enumerate() {
+                                game.timing_slots[path_pos.row][path_pos.col].insert(i);
+                            }
+                            game.board[min_hold_pos.row][min_hold_pos.col].lock = Some(CraneId(0));
+                            operations.iter().for_each(|operation| {
+                                game.add_operation(CraneId(0), operation.clone()).unwrap();
+                            });
+                        }
                     }
-                }
-                if !is_conflicted {
-                    for (i, path_pos) in path_positions.iter().enumerate() {
-                        game.timing_slots[path_pos.row][path_pos.col].insert(i);
-                    }
-                    game.board[min_hold_pos.row][min_hold_pos.col].lock = Some(CraneId(0));
-                    operations.iter().for_each(|operation| {
-                        game.add_operation(CraneId(0), operation.clone()).unwrap();
-                    });
                 }
             } else {
                 // 自分のいる位置にtiming_slotがある場合にない場所へ移動
@@ -166,6 +171,79 @@ fn main() {
         }
 
         if game.is_crane_operations_empty(CraneId(1)) {
+            eprintln!("1 STACK DETECTED");
+            let mut is_job_found = false;
+            // requestそれぞれについて、EscapeMode::Walkingで処理できるものがないか探す
+            for row in 0..input.n {
+                if game.requests[row].is_none() {
+                    continue;
+                }
+                if let Some(hold_pos) = game.find_value(game.requests[row].unwrap()) {
+                    if game.board[hold_pos.row][hold_pos.col].lock.is_some() {
+                        continue;
+                    }
+                    eprintln!(
+                        "TRY HOLDING: {} {:?}",
+                        game.requests[row].unwrap(),
+                        hold_pos
+                    );
+                    let release_pos = Position::new(row, input.n - 1);
+                    let hold_path = game.get_escape_path(
+                        &game.small_crane.get(&CraneId(1)).unwrap().pos,
+                        &hold_pos,
+                        EscapeMode::Flying,
+                        0,
+                    );
+                    if hold_path.is_err() {
+                        continue;
+                    }
+                    let hold_path = hold_path.unwrap();
+                    let release_path = game.get_escape_path(
+                        &hold_pos,
+                        &release_pos,
+                        EscapeMode::Walking,
+                        hold_path.len(),
+                    );
+                    if release_path.is_err() {
+                        continue;
+                    }
+                    let release_path = release_path.unwrap();
+                    eprintln!("TRY RELEASE: {:?} {:?}", hold_pos, release_pos);
+                    let mut operations = Vec::new();
+                    for direction in hold_path {
+                        operations.push(Operation::Move(direction));
+                    }
+                    operations.push(Operation::Hold);
+                    for direction in release_path {
+                        operations.push(Operation::Move(direction));
+                    }
+                    operations.push(Operation::Release);
+                    let path_positions = simulate_operations(
+                        &game.small_crane.get(&CraneId(1)).unwrap().pos,
+                        operations.clone(),
+                    );
+                    assert_eq!(path_positions.len(), operations.len() + 1);
+                    let mut is_conflicted = false;
+                    for (i, path_pos) in path_positions.iter().enumerate() {
+                        if game.timing_slots[path_pos.row][path_pos.col].contains(&i) && i != 0 {
+                            is_conflicted = true;
+                            break;
+                        }
+                    }
+                    if !is_conflicted {
+                        for (i, path_pos) in path_positions.iter().enumerate() {
+                            game.timing_slots[path_pos.row][path_pos.col].insert(i);
+                        }
+                        game.board[hold_pos.row][hold_pos.col].lock = Some(CraneId(1));
+                        operations.iter().for_each(|operation| {
+                            game.add_operation(CraneId(1), operation.clone()).unwrap();
+                        });
+                        is_job_found = true;
+                        break;
+                    }
+                }
+            }
+
             let floating_positions = game.get_floating_positions();
 
             // 複数試すようにする
@@ -200,7 +278,7 @@ fn main() {
 
             let mut is_stacked = true;
 
-            if !escapes.is_empty() {
+            if !escapes.is_empty() && !is_job_found {
                 for escape in escapes {
                     let hold_path = game.get_escape_path(
                         &game.small_crane.get(&CraneId(1)).unwrap().pos,
@@ -259,124 +337,44 @@ fn main() {
                     }
                 }
             }
-            if is_stacked {
-                eprintln!("1 STACK DETECTED");
-                let mut is_job_found = false;
-                // requestそれぞれについて、EscapeMode::Walkingで処理できるものがないか探す
-                for row in 0..input.n {
-                    if game.requests[row].is_none() {
-                        continue;
+
+            if is_stacked && !is_job_found {
+                // 自分のいる位置にtiming_slotがある場合にない場所へ移動
+                let current_pos = game.small_crane.get(&CraneId(1)).unwrap().pos;
+                let no_timing_slot_cells = game.find_no_timing_slot_cells(&current_pos);
+                if let Some(no_timing_slot_pos) = no_timing_slot_cells.first() {
+                    eprintln!("TRY ESCAPE: {:?} {:?}", current_pos, no_timing_slot_pos);
+                    let path = game
+                        .get_escape_path(&current_pos, no_timing_slot_pos, EscapeMode::Flying, 0)
+                        .unwrap();
+                    let mut operations = Vec::new();
+                    for direction in path {
+                        operations.push(Operation::Move(direction));
                     }
-                    if let Some(hold_pos) = game.find_value(game.requests[row].unwrap()) {
-                        if game.board[hold_pos.row][hold_pos.col].lock.is_some() {
-                            continue;
-                        }
-                        eprintln!(
-                            "TRY HOLDING: {} {:?}",
-                            game.requests[row].unwrap(),
-                            hold_pos
-                        );
-                        let release_pos = Position::new(row, input.n - 1);
-                        let hold_path = game.get_escape_path(
-                            &game.small_crane.get(&CraneId(1)).unwrap().pos,
-                            &hold_pos,
-                            EscapeMode::Flying,
-                            0,
-                        );
-                        if hold_path.is_err() {
-                            continue;
-                        }
-                        let hold_path = hold_path.unwrap();
-                        let release_path = game.get_escape_path(
-                            &hold_pos,
-                            &release_pos,
-                            EscapeMode::Walking,
-                            hold_path.len(),
-                        );
-                        if release_path.is_err() {
-                            continue;
-                        }
-                        let release_path = release_path.unwrap();
-                        eprintln!("TRY RELEASE: {:?} {:?}", hold_pos, release_pos);
-                        let mut operations = Vec::new();
-                        for direction in hold_path {
-                            operations.push(Operation::Move(direction));
-                        }
-                        operations.push(Operation::Hold);
-                        for direction in release_path {
-                            operations.push(Operation::Move(direction));
-                        }
-                        operations.push(Operation::Release);
-                        let path_positions = simulate_operations(
-                            &game.small_crane.get(&CraneId(1)).unwrap().pos,
-                            operations.clone(),
-                        );
-                        assert_eq!(path_positions.len(), operations.len() + 1);
-                        let mut is_conflicted = false;
-                        for (i, path_pos) in path_positions.iter().enumerate() {
-                            if game.timing_slots[path_pos.row][path_pos.col].contains(&i) && i != 0
-                            {
-                                is_conflicted = true;
-                                break;
-                            }
-                        }
-                        if !is_conflicted {
-                            for (i, path_pos) in path_positions.iter().enumerate() {
-                                game.timing_slots[path_pos.row][path_pos.col].insert(i);
-                            }
-                            game.board[hold_pos.row][hold_pos.col].lock = Some(CraneId(1));
-                            operations.iter().for_each(|operation| {
-                                game.add_operation(CraneId(1), operation.clone()).unwrap();
-                            });
-                            is_job_found = true;
+                    let path_positions = simulate_operations(
+                        &game.small_crane.get(&CraneId(1)).unwrap().pos,
+                        operations.clone(),
+                    );
+                    assert_eq!(path_positions.len(), operations.len() + 1);
+                    let mut is_conflicted = false;
+                    // path_positionsの0番目は自分の位置なので1から
+                    for (i, path_pos) in path_positions.iter().enumerate() {
+                        if game.timing_slots[path_pos.row][path_pos.col].contains(&i) && i != 0 {
+                            eprintln!("conflict: {:?} {:?}", path_pos, i);
+                            is_conflicted = true;
                             break;
                         }
                     }
-                }
-                if !is_job_found {
-                    // 自分のいる位置にtiming_slotがある場合にない場所へ移動
-                    let current_pos = game.small_crane.get(&CraneId(1)).unwrap().pos;
-                    let no_timing_slot_cells = game.find_no_timing_slot_cells(&current_pos);
-                    if let Some(no_timing_slot_pos) = no_timing_slot_cells.first() {
-                        eprintln!("TRY ESCAPE: {:?} {:?}", current_pos, no_timing_slot_pos);
-                        let path = game
-                            .get_escape_path(
-                                &current_pos,
-                                no_timing_slot_pos,
-                                EscapeMode::Flying,
-                                0,
-                            )
-                            .unwrap();
-                        let mut operations = Vec::new();
-                        for direction in path {
-                            operations.push(Operation::Move(direction));
-                        }
-                        let path_positions = simulate_operations(
-                            &game.small_crane.get(&CraneId(1)).unwrap().pos,
-                            operations.clone(),
-                        );
-                        assert_eq!(path_positions.len(), operations.len() + 1);
-                        let mut is_conflicted = false;
-                        // path_positionsの0番目は自分の位置なので1から
-                        for (i, path_pos) in path_positions.iter().enumerate() {
-                            if game.timing_slots[path_pos.row][path_pos.col].contains(&i) && i != 0
-                            {
-                                eprintln!("conflict: {:?} {:?}", path_pos, i);
-                                is_conflicted = true;
-                                break;
-                            }
-                        }
 
-                        eprintln!("{:?} {:?}", path_positions, operations);
-                        eprintln!("is_conflicted: {}", is_conflicted);
-                        if !is_conflicted {
-                            for (i, path_pos) in path_positions.iter().enumerate() {
-                                game.timing_slots[path_pos.row][path_pos.col].insert(i);
-                            }
-                            operations.iter().for_each(|operation| {
-                                game.add_operation(CraneId(1), operation.clone()).unwrap();
-                            });
+                    eprintln!("{:?} {:?}", path_positions, operations);
+                    eprintln!("is_conflicted: {}", is_conflicted);
+                    if !is_conflicted {
+                        for (i, path_pos) in path_positions.iter().enumerate() {
+                            game.timing_slots[path_pos.row][path_pos.col].insert(i);
                         }
+                        operations.iter().for_each(|operation| {
+                            game.add_operation(CraneId(1), operation.clone()).unwrap();
+                        });
                     }
                 }
             }
