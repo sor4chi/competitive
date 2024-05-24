@@ -1,9 +1,27 @@
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::fmt;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct CraneId(pub usize);
+
+impl fmt::Display for CraneId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Value(pub usize);
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub struct Input {
     pub n: usize,
-    pub a: Vec<Vec<usize>>,
+    pub a: Vec<Vec<Value>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -119,26 +137,10 @@ pub fn simulate_operations(p1: &Position, operations: Vec<Operation>) -> Vec<Pos
     positions
 }
 
-fn simulate_path(p1: &Position, path: Vec<Direction>) -> Vec<Position> {
-    let mut positions = Vec::new();
-    let mut current = *p1;
-    positions.push(current);
-    for direction in path {
-        match direction {
-            Direction::Up => current.row -= 1,
-            Direction::Down => current.row += 1,
-            Direction::Left => current.col -= 1,
-            Direction::Right => current.col += 1,
-        }
-        positions.push(current);
-    }
-    positions
-}
-
 #[derive(Clone)]
 pub struct BoardCell {
-    pub value: Option<usize>,
-    pub lock: Option<usize>,
+    pub value: Option<Value>,
+    pub lock: Option<CraneId>,
 }
 
 impl fmt::Debug for BoardCell {
@@ -159,7 +161,7 @@ impl fmt::Debug for BoardCell {
 #[derive(Clone, PartialEq)]
 pub struct Crane {
     pub pos: Position,
-    holding: Option<usize>,
+    holding: Option<Value>,
     operations: Vec<Operation>,
 }
 
@@ -177,12 +179,12 @@ pub struct Game {
     n: usize,
     turn: usize,
     pub board: Vec<Vec<BoardCell>>,
-    input_queues: Vec<VecDeque<usize>>,
-    output_stacks: Vec<Vec<usize>>,
+    input_queues: Vec<VecDeque<Value>>,
+    output_stacks: Vec<Vec<Value>>,
     pub big_crane: Option<Crane>,
-    pub small_crane: HashMap<usize, Crane>,
-    pub requests: Vec<Option<usize>>,
-    history: Vec<Vec<Operation>>,
+    pub small_crane: HashMap<CraneId, Crane>,
+    pub requests: Vec<Option<Value>>,
+    history: HashMap<CraneId, Vec<Operation>>,
     pub timing_slots: Vec<Vec<BTreeSet<usize>>>,
 }
 
@@ -265,7 +267,7 @@ impl Game {
         let mut small_crane = HashMap::new();
         (1..n).for_each(|row| {
             small_crane.insert(
-                row,
+                CraneId(row),
                 Crane {
                     pos: Position::new(row, 0),
                     holding: None,
@@ -273,8 +275,8 @@ impl Game {
                 },
             );
         });
-        let requests = (0..n).map(|i| Some(i * n)).collect();
-        let history = vec![vec![]; n];
+        let requests = (0..n).map(|i| Some(Value(i * n))).collect();
+        let history = (0..n).map(|i| (CraneId(i), Vec::new())).collect();
         let timing_slots = vec![vec![BTreeSet::new(); n]; n];
         Self {
             n,
@@ -290,23 +292,23 @@ impl Game {
         }
     }
 
-    pub fn get_crane(&self, crane_id: usize) -> Option<&Crane> {
-        if crane_id == 0 {
+    pub fn get_crane(&self, crane_id: CraneId) -> Option<&Crane> {
+        if crane_id == CraneId(0) {
             self.big_crane.as_ref()
         } else {
             self.small_crane.get(&crane_id)
         }
     }
 
-    fn get_crane_mut(&mut self, crane_id: usize) -> Option<&mut Crane> {
-        if crane_id == 0 {
+    fn get_crane_mut(&mut self, crane_id: CraneId) -> Option<&mut Crane> {
+        if crane_id == CraneId(0) {
             self.big_crane.as_mut()
         } else {
             self.small_crane.get_mut(&crane_id)
         }
     }
 
-    fn move_crane(&mut self, crane_id: usize, direction: Direction) -> Result<(), &str> {
+    fn move_crane(&mut self, crane_id: CraneId, direction: Direction) -> Result<(), &str> {
         // クレーンが存在しない場合はエラー
         let crane = self.get_crane(crane_id).ok_or("Invalid crane ID")?;
         // 移動先の座標を計算、範囲外の場合はエラー
@@ -336,16 +338,19 @@ impl Game {
                 Position::new(crane.pos.row, crane.pos.col + 1)
             }
         };
-        if crane_id == 0 {
+        if crane_id == CraneId(0) {
             self.big_crane.as_mut().unwrap().pos = new_pos;
         } else {
             self.small_crane.get_mut(&crane_id).unwrap().pos = new_pos;
         }
-        self.history[crane_id].push(Operation::Move(direction));
+        self.history
+            .get_mut(&crane_id)
+            .unwrap()
+            .push(Operation::Move(direction));
         Ok(())
     }
 
-    fn hold(&mut self, crane_id: usize) -> Result<(), &str> {
+    fn hold(&mut self, crane_id: CraneId) -> Result<(), &str> {
         // クレーンが存在しない場合はエラー
         let crane = self.get_crane(crane_id).ok_or("Invalid crane ID")?;
         let pos = crane.pos;
@@ -359,21 +364,24 @@ impl Game {
         let value = self.board[pos.row][pos.col]
             .value
             .ok_or("No value to hold")?;
-        if crane_id == 0 {
+        if crane_id == CraneId(0) {
             self.big_crane.as_mut().unwrap().holding = Some(value);
         } else {
             self.small_crane.get_mut(&crane_id).unwrap().holding = Some(value);
         }
         self.board[pos.row][pos.col].value = None;
         self.board[pos.row][pos.col].lock = None;
-        self.history[crane_id].push(Operation::Hold);
+        self.history
+            .get_mut(&crane_id)
+            .unwrap()
+            .push(Operation::Hold);
         Ok(())
     }
 
-    fn release(&mut self, crane_id: usize) -> Result<(), &str> {
+    fn release(&mut self, crane_id: CraneId) -> Result<(), &str> {
         let crane = self.get_crane(crane_id).ok_or("Invalid crane ID")?;
         let pos = crane.pos;
-        let value = if crane_id == 0 {
+        let value = if crane_id == CraneId(0) {
             self.big_crane.as_mut().unwrap().holding
         } else {
             self.small_crane.get_mut(&crane_id).unwrap().holding
@@ -383,17 +391,20 @@ impl Game {
             return Err("Cell is not empty");
         }
         self.board[pos.row][pos.col].value = Some(value);
-        if crane_id == 0 {
+        if crane_id == CraneId(0) {
             self.big_crane.as_mut().unwrap().holding = None;
         } else {
             self.small_crane.get_mut(&crane_id).unwrap().holding = None;
         }
-        self.history[crane_id].push(Operation::Release);
+        self.history
+            .get_mut(&crane_id)
+            .unwrap()
+            .push(Operation::Release);
         Ok(())
     }
 
-    fn crush(&mut self, crane_id: usize) -> Result<(), &str> {
-        if crane_id == 0 {
+    fn crush(&mut self, crane_id: CraneId) -> Result<(), &str> {
+        if crane_id == CraneId(0) {
             // 既に破壊済みの場合は破壊できない
             if self.big_crane.is_none() {
                 return Err("Already crushed");
@@ -414,25 +425,31 @@ impl Game {
             }
             self.small_crane.remove(&crane_id);
         }
-        self.history[crane_id].push(Operation::Crush);
+        self.history
+            .get_mut(&crane_id)
+            .unwrap()
+            .push(Operation::Crush);
         Ok(())
     }
 
-    fn stay(&mut self, crane_id: usize) {
-        self.history[crane_id].push(Operation::Stay);
+    fn stay(&mut self, crane_id: CraneId) {
+        self.history
+            .get_mut(&crane_id)
+            .unwrap()
+            .push(Operation::Stay);
     }
 
-    fn get_crane_ids(&self) -> Vec<usize> {
+    fn get_crane_ids(&self) -> Vec<CraneId> {
         let mut ids = Vec::new();
         if self.big_crane.is_some() {
-            ids.push(0);
+            ids.push(CraneId(0));
         }
         ids.extend(self.small_crane.keys().copied());
         ids.sort();
         ids
     }
 
-    pub fn add_operation(&mut self, crane_id: usize, operation: Operation) -> Result<(), &str> {
+    pub fn add_operation(&mut self, crane_id: CraneId, operation: Operation) -> Result<(), &str> {
         if let Some(crane) = self.get_crane_mut(crane_id) {
             crane.operations.push(operation);
             Ok(())
@@ -441,7 +458,7 @@ impl Game {
         }
     }
 
-    pub fn find_value(&self, value: usize) -> Option<Position> {
+    pub fn find_value(&self, value: Value) -> Option<Position> {
         for row in 0..self.n {
             for col in 0..self.n {
                 if self.board[row][col].value == Some(value) {
@@ -456,7 +473,7 @@ impl Game {
         self.requests.iter().all(|request| request.is_none())
     }
 
-    pub fn is_crane_operations_empty(&self, crane_id: usize) -> bool {
+    pub fn is_crane_operations_empty(&self, crane_id: CraneId) -> bool {
         self.get_crane(crane_id)
             .map(|crane| crane.operations.is_empty())
             .unwrap_or(true)
@@ -476,19 +493,6 @@ impl Game {
             }
         }
         floating_positions
-    }
-
-    fn find_empty_cells(&self, pos: &Position) -> Vec<Position> {
-        let mut empty_cells = Vec::new();
-        for row in 0..self.n {
-            for col in 0..self.n - 1 {
-                if self.board[row][col].value.is_none() {
-                    empty_cells.push(Position::new(row, col));
-                }
-            }
-        }
-        empty_cells.sort_by_key(|empty_pos| manhattan_distance(pos, empty_pos));
-        empty_cells
     }
 
     // 座標にクレーンがあるか
@@ -684,10 +688,10 @@ impl Game {
             if self.board[row][self.n - 1].value.is_some() {
                 if self.requests[row] == self.board[row][self.n - 1].value {
                     self.output_stacks[row].push(self.board[row][self.n - 1].value.unwrap());
-                    if self.requests[row] == Some(row * self.n + self.n - 1) {
+                    if self.requests[row] == Some(Value(row * self.n + self.n - 1)) {
                         self.requests[row] = None;
                     } else {
-                        self.requests[row] = Some(self.requests[row].unwrap() + 1);
+                        self.requests[row] = Some(Value(self.requests[row].unwrap().0 + 1));
                     }
                 }
                 self.board[row][self.n - 1].value = None;
@@ -719,12 +723,13 @@ impl Game {
 
     pub fn answer(&self) -> String {
         let mut answer = String::new();
-        for operations in &self.history {
+        (0..self.n).for_each(|crane_id| {
+            let operations = self.history.get(&CraneId(crane_id)).unwrap();
             for operation in operations {
                 answer.push_str(&format!("{}", operation));
             }
             answer.push('\n');
-        }
+        });
         answer.pop();
         answer
     }
@@ -823,50 +828,14 @@ mod tests {
     }
 
     #[test]
-    fn test_simulate_path() {
-        let p1 = Position::new(0, 0);
-        let path = vec![Direction::Right];
-        assert_eq!(
-            simulate_path(&p1, path),
-            vec![Position::new(0, 0), Position::new(0, 1)]
-        );
-
-        let p1 = Position::new(0, 0);
-        let path = vec![Direction::Down];
-        assert_eq!(
-            simulate_path(&p1, path),
-            vec![Position::new(0, 0), Position::new(1, 0)]
-        );
-
-        let p1 = Position::new(0, 0);
-        let path = vec![Direction::Down, Direction::Right];
-        assert_eq!(
-            simulate_path(&p1, path),
-            vec![
-                Position::new(0, 0),
-                Position::new(1, 0),
-                Position::new(1, 1)
-            ]
-        );
-
-        let p1 = Position::new(0, 0);
-        let path = vec![Direction::Down, Direction::Right, Direction::Right];
-        assert_eq!(
-            simulate_path(&p1, path),
-            vec![
-                Position::new(0, 0),
-                Position::new(1, 0),
-                Position::new(1, 1),
-                Position::new(1, 2)
-            ]
-        );
-    }
-
-    #[test]
     fn test_new_game() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let game = Game::new(&input);
         assert_eq!(game.n, 3);
@@ -874,25 +843,25 @@ mod tests {
         assert_eq!(game.board[0].len(), 3);
         assert_eq!(game.input_queues.len(), 3);
         assert_eq!(game.input_queues[0].len(), 3);
-        assert_eq!(game.input_queues[0][0], 1);
-        assert_eq!(game.input_queues[0][1], 2);
-        assert_eq!(game.input_queues[0][2], 3);
+        assert_eq!(game.input_queues[0][0], Value(1));
+        assert_eq!(game.input_queues[0][1], Value(2));
+        assert_eq!(game.input_queues[0][2], Value(3));
         assert_eq!(game.output_stacks.len(), 3);
         assert_eq!(game.output_stacks[0].len(), 0);
         assert_eq!(game.big_crane.as_ref().unwrap().pos, Position::new(0, 0));
         assert_eq!(game.big_crane.as_ref().unwrap().holding, None);
         assert_eq!(game.big_crane.as_ref().unwrap().operations.len(), 0);
         assert_eq!(game.small_crane.len(), 2);
-        assert_eq!(game.small_crane[&1].pos, Position::new(1, 0));
-        assert_eq!(game.small_crane[&1].holding, None);
-        assert_eq!(game.small_crane[&1].operations.len(), 0);
-        assert_eq!(game.small_crane[&2].pos, Position::new(2, 0));
-        assert_eq!(game.small_crane[&2].holding, None);
-        assert_eq!(game.small_crane[&2].operations.len(), 0);
+        assert_eq!(game.small_crane[&CraneId(1)].pos, Position::new(1, 0));
+        assert_eq!(game.small_crane[&CraneId(1)].holding, None);
+        assert_eq!(game.small_crane[&CraneId(1)].operations.len(), 0);
+        assert_eq!(game.small_crane[&CraneId(2)].pos, Position::new(2, 0));
+        assert_eq!(game.small_crane[&CraneId(2)].holding, None);
+        assert_eq!(game.small_crane[&CraneId(2)].operations.len(), 0);
         assert_eq!(game.requests.len(), 3);
-        assert_eq!(game.requests[0], Some(0));
-        assert_eq!(game.requests[1], Some(3));
-        assert_eq!(game.requests[2], Some(6));
+        assert_eq!(game.requests[0], Some(Value(0)));
+        assert_eq!(game.requests[1], Some(Value(3)));
+        assert_eq!(game.requests[2], Some(Value(6)));
         assert_eq!(game.history.len(), 3);
     }
 
@@ -900,42 +869,50 @@ mod tests {
     fn test_get_crane() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let game = Game::new(&input);
 
         // 0, 1, 2のクレーンが存在する
-        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(0, 0));
-        assert_eq!(game.get_crane(1).unwrap().pos, Position::new(1, 0));
-        assert_eq!(game.get_crane(2).unwrap().pos, Position::new(2, 0));
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().pos, Position::new(0, 0));
+        assert_eq!(game.get_crane(CraneId(1)).unwrap().pos, Position::new(1, 0));
+        assert_eq!(game.get_crane(CraneId(2)).unwrap().pos, Position::new(2, 0));
 
         // 3は存在しない
-        assert_eq!(game.get_crane(3), None);
+        assert_eq!(game.get_crane(CraneId(3)), None);
     }
 
     #[test]
     fn test_move_crane() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let mut game = Game::new(&input);
 
         // 0は下右上左に続けて移動することができる
-        let res = game.move_crane(0, Direction::Down);
+        let res = game.move_crane(CraneId(0), Direction::Down);
         assert!(res.is_ok());
-        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(1, 0));
-        let res = game.move_crane(0, Direction::Right);
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().pos, Position::new(1, 0));
+        let res = game.move_crane(CraneId(0), Direction::Right);
         assert!(res.is_ok());
-        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(1, 1));
-        let res = game.move_crane(0, Direction::Up);
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().pos, Position::new(1, 1));
+        let res = game.move_crane(CraneId(0), Direction::Up);
         assert!(res.is_ok());
-        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(0, 1));
-        let res = game.move_crane(0, Direction::Left);
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().pos, Position::new(0, 1));
+        let res = game.move_crane(CraneId(0), Direction::Left);
         assert!(res.is_ok());
-        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(0, 0));
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().pos, Position::new(0, 0));
         assert_eq!(
-            game.history[0],
+            *game.history.get(&CraneId(0)).unwrap(),
             vec![
                 Operation::Move(Direction::Down),
                 Operation::Move(Direction::Right),
@@ -945,151 +922,190 @@ mod tests {
         );
 
         // 2は下には移動できない
-        let res = game.move_crane(2, Direction::Down);
+        let res = game.move_crane(CraneId(2), Direction::Down);
         assert_eq!(res, Err("Invalid move"));
-        assert_eq!(game.get_crane(2).unwrap().pos, Position::new(2, 0));
-        assert_eq!(game.history[2].len(), 0);
+        assert_eq!(game.get_crane(CraneId(2)).unwrap().pos, Position::new(2, 0));
+        assert_eq!(game.history.get(&CraneId(2)).unwrap().len(), 0);
     }
 
     #[test]
     fn test_hold() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let mut game = Game::new(&input);
 
         // クレーン0の位置には値がないため持ち上げられない
-        let res = game.hold(0);
+        let res = game.hold(CraneId(0));
         assert_eq!(res, Err("No value to hold"));
-        assert_eq!(game.get_crane(0).unwrap().holding, None);
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().holding, None);
 
         // クレーン0の位置に値を置く
-        game.board[0][0].value = Some(1);
+        game.board[0][0].value = Some(Value(1));
 
         // クレーン0が値を持ち上げる
-        let res = game.hold(0);
+        let res = game.hold(CraneId(0));
         assert!(res.is_ok());
-        assert_eq!(game.get_crane(0).unwrap().holding, Some(1));
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().holding, Some(Value(1)));
         assert_eq!(game.board[0][0].value, None);
-        assert_eq!(game.history[0], vec![Operation::Hold]);
+        assert_eq!(
+            *game.history.get(&CraneId(0)).unwrap(),
+            vec![Operation::Hold]
+        );
 
         // クレーン0が値を持ち上げている状態にする
-        game.big_crane.as_mut().unwrap().holding = Some(2);
+        game.big_crane.as_mut().unwrap().holding = Some(Value(2));
         // クレーン0の位置に値を置く
-        game.board[0][0].value = Some(1);
+        game.board[0][0].value = Some(Value(1));
 
         // クレーン0が値を持ち上げる
-        let res = game.hold(0);
+        let res = game.hold(CraneId(0));
         assert_eq!(res, Err("Already holding a value"));
-        assert_eq!(game.get_crane(0).unwrap().holding, Some(2));
-        assert_eq!(game.board[0][0].value, Some(1));
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().holding, Some(Value(2)));
+        assert_eq!(game.board[0][0].value, Some(Value(1)));
     }
 
     #[test]
     fn test_release() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let mut game = Game::new(&input);
 
         // クレーン0は値を持ち上げていないため置けない
-        let res = game.release(0);
+        let res = game.release(CraneId(0));
         assert_eq!(res, Err("No value to release"));
         assert_eq!(game.board[0][0].value, None);
         assert_eq!(game.big_crane.as_ref().unwrap().holding, None);
 
         // クレーン0が値を持ち上げている状態にする
-        game.big_crane.as_mut().unwrap().holding = Some(1);
+        game.big_crane.as_mut().unwrap().holding = Some(Value(1));
 
         // クレーン0が値を置く
-        let res = game.release(0);
+        let res = game.release(CraneId(0));
         assert!(res.is_ok());
-        assert_eq!(game.board[0][0].value, Some(1));
+        assert_eq!(game.board[0][0].value, Some(Value(1)));
         assert_eq!(game.big_crane.as_ref().unwrap().holding, None);
-        assert_eq!(game.history[0], vec![Operation::Release]);
+        assert_eq!(
+            *game.history.get(&CraneId(0)).unwrap(),
+            vec![Operation::Release]
+        );
 
         // クレーン0が値を持ち上げている状態にする
-        game.big_crane.as_mut().unwrap().holding = Some(2);
+        game.big_crane.as_mut().unwrap().holding = Some(Value(2));
 
         // クレーン0が値を置く
-        let res = game.release(0);
+        let res = game.release(CraneId(0));
         assert_eq!(res, Err("Cell is not empty"));
-        assert_eq!(game.board[0][0].value, Some(1));
-        assert_eq!(game.big_crane.as_ref().unwrap().holding, Some(2));
+        assert_eq!(game.board[0][0].value, Some(Value(1)));
+        assert_eq!(game.big_crane.as_ref().unwrap().holding, Some(Value(2)));
     }
 
     #[test]
     fn test_crush() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let mut game = Game::new(&input);
 
         // クレーン0を破壊する
-        let res = game.crush(0);
+        let res = game.crush(CraneId(0));
         assert!(res.is_ok());
         assert_eq!(game.big_crane, None);
-        assert_eq!(game.get_crane(0), None);
-        assert_eq!(game.history[0], vec![Operation::Crush]);
+        assert_eq!(game.get_crane(CraneId(0)), None);
+        assert_eq!(
+            *game.history.get(&CraneId(0)).unwrap(),
+            vec![Operation::Crush]
+        );
 
         // クレーン0を破壊する
-        let res = game.crush(0);
+        let res = game.crush(CraneId(0));
         assert_eq!(res, Err("Already crushed"));
 
         let mut game = Game::new(&input);
 
         // クレーン0が値を持ち上げている状態にする
-        game.big_crane.as_mut().unwrap().holding = Some(1);
+        game.big_crane.as_mut().unwrap().holding = Some(Value(1));
 
         // クレーン0を破壊する
-        let res = game.crush(0);
+        let res = game.crush(CraneId(0));
         assert_eq!(res, Err("Cannot crush while holding a value"));
-        assert_eq!(game.big_crane.as_ref().unwrap().holding, Some(1));
+        assert_eq!(game.big_crane.as_ref().unwrap().holding, Some(Value(1)));
     }
 
     #[test]
     fn test_stay() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let mut game = Game::new(&input);
 
         // クレーン0の位置には値がないため置けない
-        game.stay(0);
-        assert_eq!(game.history[0], vec![Operation::Stay]);
+        game.stay(CraneId(0));
+        assert_eq!(
+            *game.history.get(&CraneId(0)).unwrap(),
+            vec![Operation::Stay]
+        );
     }
 
     #[test]
     fn test_get_crane_ids() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let game = Game::new(&input);
 
         // クレーン0, 1, 2が存在する
-        assert_eq!(game.get_crane_ids(), vec![0, 1, 2]);
+        assert_eq!(
+            game.get_crane_ids(),
+            vec![CraneId(0), CraneId(1), CraneId(2)]
+        );
 
         // クレーン0を破壊する
         let mut game = Game::new(&input);
         game.big_crane = None;
-        assert_eq!(game.get_crane_ids(), vec![1, 2]);
+        assert_eq!(game.get_crane_ids(), vec![CraneId(1), CraneId(2)]);
 
         // クレーン1を破壊する
         let mut game = Game::new(&input);
-        game.small_crane.remove(&1);
-        assert_eq!(game.get_crane_ids(), vec![0, 2]);
+        game.small_crane.remove(&CraneId(1));
+        assert_eq!(game.get_crane_ids(), vec![CraneId(0), CraneId(2)]);
     }
 
     #[test]
     fn test_tick_board_update() {
         let input = Input {
             n: 3,
-            a: vec![vec![0, 1, 2], vec![3, 4, 5], vec![6, 7, 8]],
+            a: vec![
+                vec![Value(0), Value(1), Value(2)],
+                vec![Value(3), Value(4), Value(5)],
+                vec![Value(6), Value(7), Value(8)],
+            ],
         };
         let mut game = Game::new(&input);
 
@@ -1100,12 +1116,12 @@ mod tests {
         // Tickすると入力キューの先頭が各行の先頭に移動する
         game.tick();
 
-        assert_eq!(game.board[0][0].value, Some(0));
-        assert_eq!(game.board[1][0].value, Some(3));
-        assert_eq!(game.board[2][0].value, Some(6));
-        assert_eq!(game.input_queues[0][0], 1);
-        assert_eq!(game.input_queues[1][0], 4);
-        assert_eq!(game.input_queues[2][0], 7);
+        assert_eq!(game.board[0][0].value, Some(Value(0)));
+        assert_eq!(game.board[1][0].value, Some(Value(3)));
+        assert_eq!(game.board[2][0].value, Some(Value(6)));
+        assert_eq!(game.input_queues[0][0], Value(1));
+        assert_eq!(game.input_queues[1][0], Value(4));
+        assert_eq!(game.input_queues[2][0], Value(7));
 
         // Tickすると各行の最後の値が出力スタックに移動する
         game.board[0][2].value = game.board[0][0].value;
@@ -1120,16 +1136,20 @@ mod tests {
         assert_eq!(game.board[0][2].value, None);
         assert_eq!(game.board[1][2].value, None);
         assert_eq!(game.board[2][2].value, None);
-        assert_eq!(game.output_stacks[0][0], 0);
-        assert_eq!(game.output_stacks[1][0], 3);
-        assert_eq!(game.output_stacks[2][0], 6);
+        assert_eq!(game.output_stacks[0][0], Value(0));
+        assert_eq!(game.output_stacks[1][0], Value(3));
+        assert_eq!(game.output_stacks[2][0], Value(6));
     }
 
     #[test]
     fn test_tick_crane_operations() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let mut game = Game::new(&input);
 
@@ -1137,53 +1157,61 @@ mod tests {
         game.tick();
 
         // クレーン0が今いるマスの値を持ち上げる
-        game.add_operation(0, Operation::Hold).unwrap();
+        game.add_operation(CraneId(0), Operation::Hold).unwrap();
         // クレーン0が持ち上げた値を右に移動する
-        game.add_operation(0, Operation::Move(Direction::Right))
+        game.add_operation(CraneId(0), Operation::Move(Direction::Right))
             .unwrap();
         // クレーン0が持ち上げた値を置く
-        game.add_operation(0, Operation::Release).unwrap();
+        game.add_operation(CraneId(0), Operation::Release).unwrap();
 
-        assert_eq!(game.board[0][0].value, Some(1));
+        assert_eq!(game.board[0][0].value, Some(Value(1)));
         game.tick();
         // 次のinputが入る
-        assert_eq!(game.board[0][0].value, Some(2));
-        assert_eq!(game.get_crane(0).unwrap().holding, Some(1));
-        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(0, 0));
+        assert_eq!(game.board[0][0].value, Some(Value(2)));
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().holding, Some(Value(1)));
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().pos, Position::new(0, 0));
         game.tick();
         assert_eq!(game.board[0][1].value, None);
-        assert_eq!(game.get_crane(0).unwrap().holding, Some(1));
-        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(0, 1));
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().holding, Some(Value(1)));
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().pos, Position::new(0, 1));
         game.tick();
-        assert_eq!(game.board[0][1].value, Some(1));
-        assert_eq!(game.get_crane(0).unwrap().holding, None);
-        assert_eq!(game.get_crane(0).unwrap().pos, Position::new(0, 1));
+        assert_eq!(game.board[0][1].value, Some(Value(1)));
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().holding, None);
+        assert_eq!(game.get_crane(CraneId(0)).unwrap().pos, Position::new(0, 1));
     }
 
     #[test]
     fn test_find_value() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let mut game = Game::new(&input);
         for row in 0..3 {
             for col in 0..3 {
-                game.board[row][col].value = Some(row * 3 + col + 1);
+                game.board[row][col].value = Some(Value(row * 3 + col + 1));
             }
         }
 
-        assert_eq!(game.find_value(1), Some(Position::new(0, 0)));
-        assert_eq!(game.find_value(5), Some(Position::new(1, 1)));
-        assert_eq!(game.find_value(9), Some(Position::new(2, 2)));
-        assert_eq!(game.find_value(10), None);
+        assert_eq!(game.find_value(Value(1)), Some(Position::new(0, 0)));
+        assert_eq!(game.find_value(Value(5)), Some(Position::new(1, 1)));
+        assert_eq!(game.find_value(Value(9)), Some(Position::new(2, 2)));
+        assert_eq!(game.find_value(Value(10)), None);
     }
 
     #[test]
     fn test_is_request_completed() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let mut game = Game::new(&input);
 
@@ -1200,47 +1228,31 @@ mod tests {
     fn test_is_crane_operations_empty() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let mut game = Game::new(&input);
 
-        assert!(game.is_crane_operations_empty(0));
+        assert!(game.is_crane_operations_empty(CraneId(0)));
 
-        game.add_operation(0, Operation::Move(Direction::Down))
+        game.add_operation(CraneId(0), Operation::Move(Direction::Down))
             .unwrap();
 
-        assert!(!game.is_crane_operations_empty(0));
-    }
-
-    #[test]
-    fn test_find_empty_cells() {
-        let input = Input {
-            n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
-        };
-        let mut game = Game::new(&input);
-
-        for row in 0..3 {
-            for col in 0..3 {
-                if row == col {
-                    continue;
-                }
-                game.board[row][col].value = Some(row * 3 + col + 1);
-            }
-        }
-
-        let empty_cells = game.find_empty_cells(&Position::new(0, 0));
-        assert_eq!(empty_cells.len(), 2);
-        assert_eq!(empty_cells[0], Position::new(0, 0));
-        assert_eq!(empty_cells[1], Position::new(1, 1));
-        // 右端は空いていても無視される
+        assert!(!game.is_crane_operations_empty(CraneId(0)));
     }
 
     #[test]
     fn test_get_floating_positions() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
         let game = Game::new(&input);
 
@@ -1248,14 +1260,14 @@ mod tests {
         assert_eq!(floating_positions.len(), 0);
 
         let mut game = Game::new(&input);
-        game.board[0][0].value = Some(1);
-        game.board[0][1].value = Some(2);
+        game.board[0][0].value = Some(Value(1));
+        game.board[0][1].value = Some(Value(2));
         game.board[0][2].value = None;
-        game.board[1][0].value = Some(4);
-        game.board[1][1].value = Some(5);
+        game.board[1][0].value = Some(Value(4));
+        game.board[1][1].value = Some(Value(5));
         game.board[1][2].value = None;
-        game.board[2][0].value = Some(7);
-        game.board[2][1].value = Some(8);
+        game.board[2][0].value = Some(Value(7));
+        game.board[2][1].value = Some(Value(8));
         game.board[2][2].value = None;
 
         let floating_positions = game.get_floating_positions();
@@ -1274,15 +1286,15 @@ mod tests {
         let floating_positions = game.get_floating_positions();
         assert_eq!(floating_positions.len(), 0);
 
-        game.board[0][0].value = Some(1);
+        game.board[0][0].value = Some(Value(1));
         game.board[0][1].value = None;
-        game.board[0][2].value = Some(3);
+        game.board[0][2].value = Some(Value(3));
         game.board[1][0].value = None;
-        game.board[1][1].value = Some(5);
+        game.board[1][1].value = Some(Value(5));
         game.board[1][2].value = None;
-        game.board[2][0].value = Some(7);
+        game.board[2][0].value = Some(Value(7));
         game.board[2][1].value = None;
-        game.board[2][2].value = Some(9);
+        game.board[2][2].value = Some(Value(9));
 
         let floating_positions = game.get_floating_positions();
         assert_eq!(floating_positions.len(), 2);
@@ -1294,7 +1306,11 @@ mod tests {
     fn test_get_escape_path_flying() {
         let input = Input {
             n: 3,
-            a: vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]],
+            a: vec![
+                vec![Value(1), Value(2), Value(3)],
+                vec![Value(4), Value(5), Value(6)],
+                vec![Value(7), Value(8), Value(9)],
+            ],
         };
 
         let from = Position::new(0, 0);
@@ -1328,10 +1344,10 @@ mod tests {
         let input = Input {
             n: 4,
             a: vec![
-                vec![1, 2, 3, 4],
-                vec![5, 6, 7, 8],
-                vec![9, 10, 11, 12],
-                vec![13, 14, 15, 16],
+                vec![Value(1), Value(2), Value(3), Value(4)],
+                vec![Value(5), Value(6), Value(7), Value(8)],
+                vec![Value(9), Value(10), Value(11), Value(12)],
+                vec![Value(13), Value(14), Value(15), Value(16)],
             ],
         };
         let from = Position::new(0, 0);

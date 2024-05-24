@@ -1,8 +1,8 @@
 use proconio::input;
 
 use solver::game::{
-    get_direct_path, manhattan_distance, simulate_operations, EscapeMode, Game, Input, Operation,
-    Position,
+    get_direct_path, manhattan_distance, simulate_operations, CraneId, EscapeMode, Game, Input,
+    Operation, Position, Value,
 };
 
 fn main() {
@@ -10,6 +10,11 @@ fn main() {
         n: usize,
         a: [[usize; n]; n],
     }
+
+    let a = a
+        .iter()
+        .map(|row| row.iter().map(|&value| Value(value)).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
 
     let input = Input { n, a };
     let mut game = Game::new(&input);
@@ -20,7 +25,7 @@ fn main() {
         for row in 0..input.n {
             let mut operations = Vec::new();
             operations.push(Operation::Hold);
-            let start_pos = game.get_crane(row).unwrap().pos;
+            let start_pos = game.get_crane(CraneId(row)).unwrap().pos;
             let hold_pos = Position::new(row, col);
             let start_col = if col == 1 { 1 } else { 0 };
             let release_pos = Position::new(row, start_col);
@@ -37,7 +42,7 @@ fn main() {
                 });
             let path_positions = simulate_operations(&start_pos, operations.clone());
             operations.iter().for_each(|operation| {
-                game.add_operation(row, operation.clone()).unwrap();
+                game.add_operation(CraneId(row), operation.clone()).unwrap();
             });
             assert_eq!(path_positions.len(), operations.len() + 1);
             for (i, path_pos) in path_positions.iter().enumerate() {
@@ -55,14 +60,14 @@ fn main() {
     }
 
     for i in 2..input.n {
-        game.add_operation(i, Operation::Crush).unwrap();
+        game.add_operation(CraneId(i), Operation::Crush).unwrap();
     }
 
     while !game.is_request_completed() {
-        if game.is_crane_operations_empty(0)
-            && game.is_crane_operations_empty(1)
+        if game.is_crane_operations_empty(CraneId(0))
+            && game.is_crane_operations_empty(CraneId(1))
             && game.big_crane.is_some()
-            && game.small_crane.contains_key(&1)
+            && game.small_crane.contains_key(&CraneId(1))
         {
             // 盤面上に残り何個のコンテナがあるか
             let remaining_containers = game
@@ -78,25 +83,29 @@ fn main() {
                     .enumerate()
                     .flat_map(|(row, cells)| {
                         cells.iter().enumerate().filter_map(move |(col, cell)| {
-                            cell.value.map(|value| Position::new(row, col))
+                            if cell.value.is_some() {
+                                Some(Position::new(row, col))
+                            } else {
+                                None
+                            }
                         })
                     })
                     .next()
                     .unwrap();
                 // 距離の遠い方のクレーンを破壊
                 let big_crane = game.big_crane.as_ref().unwrap();
-                let small_crane = game.small_crane.get(&1).unwrap();
+                let small_crane = game.small_crane.get(&CraneId(1)).unwrap();
                 let big_distance = manhattan_distance(&big_crane.pos, &remaining_container_pos);
                 let small_distance = manhattan_distance(&small_crane.pos, &remaining_container_pos);
                 if big_distance > small_distance {
-                    game.add_operation(0, Operation::Crush).unwrap();
+                    game.add_operation(CraneId(0), Operation::Crush).unwrap();
                 } else {
-                    game.add_operation(1, Operation::Crush).unwrap();
+                    game.add_operation(CraneId(1), Operation::Crush).unwrap();
                 }
             }
         }
 
-        if game.is_crane_operations_empty(0) && game.get_crane(0).is_some() {
+        if game.is_crane_operations_empty(CraneId(0)) && game.get_crane(CraneId(0)).is_some() {
             let big_crane = game.big_crane.as_ref().unwrap();
             // game.requestsの値の中で、盤面に存在する値を持っているクレーンを探し、一番近いものを探す
             let mut min_distance = std::usize::MAX;
@@ -159,9 +168,9 @@ fn main() {
                     for (i, path_pos) in path_positions.iter().enumerate() {
                         game.timing_slots[path_pos.row][path_pos.col].insert(i);
                     }
-                    game.board[min_hold_pos.row][min_hold_pos.col].lock = Some(0);
+                    game.board[min_hold_pos.row][min_hold_pos.col].lock = Some(CraneId(0));
                     operations.iter().for_each(|operation| {
-                        game.add_operation(0, operation.clone()).unwrap();
+                        game.add_operation(CraneId(0), operation.clone()).unwrap();
                     });
                 }
             } else {
@@ -190,14 +199,14 @@ fn main() {
                             game.timing_slots[path_pos.row][path_pos.col].insert(i);
                         }
                         operations.iter().for_each(|operation| {
-                            game.add_operation(0, operation.clone()).unwrap();
+                            game.add_operation(CraneId(0), operation.clone()).unwrap();
                         });
                     }
                 }
             }
         }
 
-        if game.is_crane_operations_empty(1) && game.get_crane(1).is_some() {
+        if game.is_crane_operations_empty(CraneId(1)) && game.get_crane(CraneId(1)).is_some() {
             let floating_positions = game.get_floating_positions();
 
             // 複数試すようにする
@@ -218,9 +227,10 @@ fn main() {
                 {
                     release_pos.col += 1;
                 }
-                let distance =
-                    manhattan_distance(&game.small_crane.get(&1).unwrap().pos, &floating_pos)
-                        + manhattan_distance(&floating_pos, &release_pos);
+                let distance = manhattan_distance(
+                    &game.small_crane.get(&CraneId(1)).unwrap().pos,
+                    &floating_pos,
+                ) + manhattan_distance(&floating_pos, &release_pos);
                 escapes.push(FloatingJob {
                     distance,
                     hold_pos: floating_pos,
@@ -234,7 +244,7 @@ fn main() {
             if !escapes.is_empty() {
                 for escape in escapes {
                     let hold_path = game.get_escape_path(
-                        &game.small_crane.get(&1).unwrap().pos,
+                        &game.small_crane.get(&CraneId(1)).unwrap().pos,
                         &escape.hold_pos,
                         EscapeMode::Flying,
                         0,
@@ -260,7 +270,7 @@ fn main() {
                             }
                             operations.push(Operation::Release);
                             let path_positions = simulate_operations(
-                                &game.small_crane.get(&1).unwrap().pos,
+                                &game.small_crane.get(&CraneId(1)).unwrap().pos,
                                 operations.clone(),
                             );
                             let mut is_conflicted = false;
@@ -278,9 +288,10 @@ fn main() {
                                 for (i, path_pos) in path_positions.iter().enumerate() {
                                     game.timing_slots[path_pos.row][path_pos.col].insert(i);
                                 }
-                                game.board[escape.hold_pos.row][escape.hold_pos.col].lock = Some(1);
+                                game.board[escape.hold_pos.row][escape.hold_pos.col].lock =
+                                    Some(CraneId(1));
                                 operations.iter().for_each(|operation| {
-                                    game.add_operation(1, operation.clone()).unwrap();
+                                    game.add_operation(CraneId(1), operation.clone()).unwrap();
                                 });
                                 is_stacked = false;
                                 break;
@@ -308,7 +319,7 @@ fn main() {
                         );
                         let release_pos = Position::new(row, input.n - 1);
                         let hold_path = game.get_escape_path(
-                            &game.small_crane.get(&1).unwrap().pos,
+                            &game.small_crane.get(&CraneId(1)).unwrap().pos,
                             &hold_pos,
                             EscapeMode::Flying,
                             0,
@@ -338,7 +349,7 @@ fn main() {
                         }
                         operations.push(Operation::Release);
                         let path_positions = simulate_operations(
-                            &game.small_crane.get(&1).unwrap().pos,
+                            &game.small_crane.get(&CraneId(1)).unwrap().pos,
                             operations.clone(),
                         );
                         assert_eq!(path_positions.len(), operations.len() + 1);
@@ -354,9 +365,9 @@ fn main() {
                             for (i, path_pos) in path_positions.iter().enumerate() {
                                 game.timing_slots[path_pos.row][path_pos.col].insert(i);
                             }
-                            game.board[hold_pos.row][hold_pos.col].lock = Some(1);
+                            game.board[hold_pos.row][hold_pos.col].lock = Some(CraneId(1));
                             operations.iter().for_each(|operation| {
-                                game.add_operation(1, operation.clone()).unwrap();
+                                game.add_operation(CraneId(1), operation.clone()).unwrap();
                             });
                             is_job_found = true;
                             break;
@@ -365,7 +376,7 @@ fn main() {
                 }
                 if !is_job_found {
                     // 自分のいる位置にtiming_slotがある場合にない場所へ移動
-                    let current_pos = game.small_crane.get(&1).unwrap().pos;
+                    let current_pos = game.small_crane.get(&CraneId(1)).unwrap().pos;
                     let no_timing_slot_cells = game.find_no_timing_slot_cells(&current_pos);
                     if let Some(no_timing_slot_pos) = no_timing_slot_cells.first() {
                         eprintln!("TRY ESCAPE: {:?} {:?}", current_pos, no_timing_slot_pos);
@@ -382,7 +393,7 @@ fn main() {
                             operations.push(Operation::Move(direction));
                         }
                         let path_positions = simulate_operations(
-                            &game.small_crane.get(&1).unwrap().pos,
+                            &game.small_crane.get(&CraneId(1)).unwrap().pos,
                             operations.clone(),
                         );
                         assert_eq!(path_positions.len(), operations.len() + 1);
@@ -404,7 +415,7 @@ fn main() {
                                 game.timing_slots[path_pos.row][path_pos.col].insert(i);
                             }
                             operations.iter().for_each(|operation| {
-                                game.add_operation(1, operation.clone()).unwrap();
+                                game.add_operation(CraneId(1), operation.clone()).unwrap();
                             });
                         }
                     }
