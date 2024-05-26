@@ -87,6 +87,7 @@ pub struct Output {
     pub out: Vec<Vec<char>>,
     pub lock: HashMap<usize, Vec<Vec<Option<usize>>>>,
     pub timing: HashMap<usize, Vec<Vec<Option<Vec<usize>>>>>,
+    pub comment: HashMap<usize, String>,
 }
 
 pub fn parse_output(input: &Input, f: &str) -> Result<Output, String> {
@@ -98,6 +99,7 @@ pub fn parse_output(input: &Input, f: &str) -> Result<Output, String> {
     // 繰り返しproconioで読む
     let mut lock = HashMap::new();
     let mut timing = HashMap::new();
+    let mut comment = HashMap::new();
     for chunk in iter {
         let source = OnceSource::from(chunk[0]);
         let out = chunk[1..].iter().map(|s| s.to_string()).join("\n");
@@ -154,6 +156,10 @@ pub fn parse_output(input: &Input, f: &str) -> Result<Output, String> {
 
             timing.entry(turn).or_insert(timing_info);
         }
+        if header.starts_with("comment,turn:") {
+            let turn: usize = header.split(':').nth(1).unwrap().parse::<usize>().unwrap();
+            comment.insert(turn, out);
+        }
     }
 
     let footer = f.lines().skip(f.lines().count() - input.n).collect_vec();
@@ -167,7 +173,12 @@ pub fn parse_output(input: &Input, f: &str) -> Result<Output, String> {
     if out.iter().any(|s| s.len() == 0 || s.len() > 10000) {
         return Err("Illegal output length".to_owned());
     }
-    Ok(Output { out, lock, timing })
+    Ok(Output {
+        out,
+        lock,
+        timing,
+        comment,
+    })
 }
 
 pub fn gen(seed: u64) -> Input {
@@ -426,7 +437,8 @@ pub const CRANE: &'static str = r#"<path d="m396.1,11h-238.9c-7.5-0.5-22.1,6.8-2
 pub fn vis(input: &Input, out: &Output, t: usize) -> (i64, String, String) {
     let S = 40;
     let D = 600 / (input.n + 2);
-    let W = D * (input.n + 2) + D / input.n;
+    let COMMENT_W = 500;
+    let W = D * (input.n + 2) + D / input.n + COMMENT_W;
     let H = D * input.n + S;
     let (score, err, state) = compute_score_details(input, out, t);
     let mut doc = svg::Document::new()
@@ -620,6 +632,18 @@ pub fn vis(input: &Input, out: &Output, t: usize) -> (i64, String, String) {
                 }
             }
         }
+    }
+
+    // 右端にコメントを表示
+    if let Some(comment) = out.comment.get(&t) {
+        doc = doc.add(
+            Text::new(comment)
+                .set("x", W - COMMENT_W / 2)
+                .set("y", H / 2 - D)
+                .set("font-size", 16)
+                .set("fill", "black")
+                .set("text-anchor", "end"),
+        );
     }
 
     (score, err, doc.to_string())

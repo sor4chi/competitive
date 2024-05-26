@@ -4,8 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+itertools = "0.13.0"
 proconio = "0.4.5"
-
-[[bin]]
-name = "two_cranes"
-path = "src/bin/two_cranes.rs"
