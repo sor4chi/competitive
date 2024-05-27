@@ -1,0 +1,26 @@
+{
+  "total": {
+    "score": 16028,
+    "filename": "total"
+  },
+  "avg": {
+    "score": 160.28,
+    "filename": "avg"
+  },
+  "max": {
+    "score": 208,
+    "filename": "0079.txt"
+  },
+  "min": {
+    "score": 110,
+    "filename": "0062.txt"
+  },
+  "p90": {
+    "score": 190,
+    "filename": "0099.txt"
+  },
+  "p50": {
+    "score": 159,
+    "filename": "0091.txt"
+  }
+}
