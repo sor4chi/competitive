@@ -5,6 +5,8 @@ use game::{
     Operation, Position, TickError, Value,
 };
 
+use std::time::Instant;
+
 mod game {
     use std::collections::{BTreeSet, HashMap, VecDeque};
     use std::fmt;
@@ -704,13 +706,16 @@ mod game {
                             }
                         }
                         Operation::Hold => {
-                            self.hold(id).unwrap();
+                            // 提出のためエラーを無視する
+                            self.hold(id);
                         }
                         Operation::Release => {
-                            self.release(id).unwrap();
+                            // 提出のためエラーを無視する
+                            self.release(id);
                         }
                         Operation::Crush => {
-                            self.crush(id).unwrap();
+                            // 提出のためエラーを無視する
+                            self.crush(id);
                         }
                     }
                 });
@@ -1627,7 +1632,7 @@ fn main() {
 
     let mut answers = Vec::new();
 
-    (1..3).for_each(|use_small| {
+    (1..n).for_each(|use_small| {
         let input = Input { n, a: a.clone() };
         let mut game = Game::new(&input);
         game.tick();
@@ -1677,7 +1682,9 @@ fn main() {
             game.add_operation(CraneId(i), Operation::Crush).unwrap();
         }
 
-        while !game.is_request_completed() {
+        // 万が一のために実行が700msを超えたらwhileを抜ける
+        let start = std::time::Instant::now();
+        while !game.is_request_completed() && start.elapsed().as_millis() < 700 {
             let mut snapshot = game.clone();
 
             if game.is_crane_operations_empty(CraneId(0)) {
@@ -1701,15 +1708,14 @@ fn main() {
                             let mut distance = manhattan_distance(&big_crane.pos, &hold_pos)
                                 + manhattan_distance(&hold_pos, &release_pos);
                             // もしoutput_stacksが空のrowだったら優先したいため、空でない場合はdistanceを大きくする
-                            // if !game.output_stacks[row].is_empty() {
-                            //     // distance += 10;
-                            //     distance += 5;
-                            // }
-                            distance += game.output_stacks[row].len();
+                            if !game.output_stacks[row].is_empty() {
+                                distance += 10;
+                                // distance += 5;
+                            }
                             // もしhold_posがrow==2だったら優先したいため、row!=2の場合はdistanceを大きくする
                             if hold_pos.row != 2 {
-                                // distance += 5;
-                                distance += 10;
+                                distance += 5;
+                                // distance += 10;
                             }
                             if distance < min_distance {
                                 min_distance = distance;
@@ -1775,36 +1781,38 @@ fn main() {
                     let current_pos = big_crane.pos;
                     let no_timing_slot_cells = game.find_no_timing_slot_cells(&current_pos);
                     if let Some(no_timing_slot_pos) = no_timing_slot_cells.first() {
-                        let path = game
-                            .get_escape_path(
-                                &current_pos,
-                                no_timing_slot_pos,
-                                EscapeMode::Flying,
-                                0,
-                            )
-                            .unwrap();
-                        let mut operations = Vec::new();
-                        for direction in path {
-                            operations.push(Operation::Move(direction));
-                        }
-                        let path_positions =
-                            simulate_operations(&big_crane.pos, operations.clone());
-                        assert_eq!(path_positions.len(), operations.len() + 1);
-                        let mut is_conflicted = false;
-                        for (i, path_pos) in path_positions.iter().enumerate() {
-                            if game.timing_slots[path_pos.row][path_pos.col].contains(&i) && i != 0
-                            {
-                                is_conflicted = true;
-                                break;
+                        let path = game.get_escape_path(
+                            &current_pos,
+                            no_timing_slot_pos,
+                            EscapeMode::Flying,
+                            0,
+                        );
+                        if path.is_ok() {
+                            let path = path.unwrap();
+                            let mut operations = Vec::new();
+                            for direction in path {
+                                operations.push(Operation::Move(direction));
                             }
-                        }
-                        if !is_conflicted {
+                            let path_positions =
+                                simulate_operations(&big_crane.pos, operations.clone());
+                            assert_eq!(path_positions.len(), operations.len() + 1);
+                            let mut is_conflicted = false;
                             for (i, path_pos) in path_positions.iter().enumerate() {
-                                game.timing_slots[path_pos.row][path_pos.col].insert(i);
+                                if game.timing_slots[path_pos.row][path_pos.col].contains(&i)
+                                    && i != 0
+                                {
+                                    is_conflicted = true;
+                                    break;
+                                }
                             }
-                            operations.iter().for_each(|operation| {
-                                game.add_operation(CraneId(0), operation.clone()).unwrap();
-                            });
+                            if !is_conflicted {
+                                for (i, path_pos) in path_positions.iter().enumerate() {
+                                    game.timing_slots[path_pos.row][path_pos.col].insert(i);
+                                }
+                                operations.iter().for_each(|operation| {
+                                    game.add_operation(CraneId(0), operation.clone()).unwrap();
+                                });
+                            }
                         }
                     }
                 }
