@@ -56,7 +56,7 @@ int main() {
     vector<vector<ll>> v(t, vector<ll>(n));
     rep(i, t) rep(j, n) input(v[i][j]);
 
-    ll BEAM_SIZE = 1;
+    ll BEAM_SIZE = 2;
     vector<BeamNode> beam;
     beam.push_back({vector<OP>(), vector<ll>(n, 0)});
 
