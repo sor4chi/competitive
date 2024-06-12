@@ -60,11 +60,11 @@ int main() {
     vector<vector<int>> v(t, vector<int>(n));
     rep(i, t) rep(j, n) input(v[i][j]);
 
-    int BEAM_SIZE = 5;
+    int BEAM_SIZE = 3;
     vector<BeamNode> beam;
     beam.push_back({vector<OP>(), vector<int8_t>(n, 0)});
 
-    int8_t SPAN = 5;
+    int8_t SPAN = 4;
     for (int i = 0; i < t; i++) {
         vector<BeamNode> next_beam;
         for (auto node : beam) {
