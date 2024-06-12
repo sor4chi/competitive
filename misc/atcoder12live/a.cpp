@@ -48,6 +48,19 @@ struct BeamNode {
     vector<int8_t> v;
 };
 
+int eval(vector<int8_t>& v, vector<int>& goal_vt) {
+    int score = 0;
+    for (int j = 0; j < v.size(); j++) {
+        score += abs(v[j] - goal_vt[j]);
+    }
+    return score;
+}
+
+struct NextBeamNode {
+    BeamNode node;
+    int score;
+};
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -60,19 +73,18 @@ int main() {
     vector<vector<int>> v(t, vector<int>(n));
     rep(i, t) rep(j, n) input(v[i][j]);
 
-    int BEAM_SIZE = 3;
+    int BEAM_SIZE = 6;
     vector<BeamNode> beam;
     beam.push_back({vector<OP>(), vector<int8_t>(n, 0)});
 
     int8_t SPAN = 4;
+    vector<int8_t> evi;
+    for (int8_t j = 0; j + SPAN < n; j += SPAN) {
+        evi.push_back(j);
+    }
     for (int i = 0; i < t; i++) {
-        vector<BeamNode> next_beam;
+        vector<NextBeamNode> next_beam;
         for (auto node : beam) {
-            vector<int8_t> evi;
-            for (int8_t j = 0; j + SPAN < n; j += SPAN) {
-                evi.push_back(j);
-            }
-
             for (int8_t l = 0; l < evi.size(); l++) {
                 for (int8_t r = l + 1; r < evi.size(); r++) {
                     for (int8_t d = -3; d <= 3; d++) {
@@ -82,7 +94,7 @@ int main() {
                         }
                         vector<OP> next_ops = node.ops;
                         next_ops.push_back({evi[l], (int8_t)(evi[r] - 1), d});
-                        next_beam.push_back({next_ops, next_v});
+                        next_beam.push_back({next_ops, next_v, eval(next_v, v[i])});
                     }
                 }
             }
@@ -91,19 +103,16 @@ int main() {
         cerr << "next_beam.size() = " << next_beam.size() << endl;
 
         vector<int> goal_vt = v[i];
-        auto eval = [&](BeamNode node) {
-            int score = 0;
-            for (int j = 0; j < n; j++) {
-                score += abs(node.v[j] - goal_vt[j]);
-            }
-            return score;
-        };
 
-        sort(next_beam.begin(), next_beam.end(), [&](BeamNode a, BeamNode b) {
-            return eval(a) < eval(b);
+        sort(next_beam.begin(), next_beam.end(), [&](NextBeamNode a, NextBeamNode b) {
+            return a.score < b.score;
         });
 
-        beam = vector<BeamNode>(next_beam.begin(), next_beam.begin() + BEAM_SIZE);
+        beam.clear();
+
+        for (int j = 0; j < min(BEAM_SIZE, (int)next_beam.size()); j++) {
+            beam.push_back(next_beam[j].node);
+        }
     }
 
     auto ops = beam[0].ops;
