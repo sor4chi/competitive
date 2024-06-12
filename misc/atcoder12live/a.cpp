@@ -43,12 +43,20 @@ struct OP {
     }
 };
 
+int counter = 0;
+int gen_id() {
+    return counter++;
+}
+
 struct BeamNode {
-    vector<OP> ops;
+    int parent_id;
+    int id;
+    OP op;
     vector<int8_t> v;
+    int score;
 
     bool operator<(const BeamNode& other) const {
-        return ops.size() < other.ops.size();
+        return score < other.score;
     }
 };
 
@@ -72,19 +80,26 @@ int main() {
     vector<vector<int>> v(t, vector<int>(n));
     rep(i, t) rep(j, n) input(v[i][j]);
 
-    int BEAM_SIZE = 30;
-    vector<BeamNode> beam;
-    beam.push_back({vector<OP>(), vector<int8_t>(n, 0)});
+    int BEAM_SIZE = 60;
+    priority_queue<BeamNode> beam;
+    map<int, BeamNode> beam_history;
+    beam.push({-1, gen_id(), {}, vector<int8_t>(n, 0)});
+    beam_history[0] = beam.top();
 
     int8_t SPAN = 4;
     vector<int8_t> evi;
     for (int8_t j = 0; j + SPAN < n; j += SPAN) {
         evi.push_back(j);
     }
+    if (evi.back() != n - 1) {
+        evi.push_back(n - 1);
+    }
     for (int i = 0; i < t; i++) {
-        priority_queue<pair<int, BeamNode>> next_beam;
+        priority_queue<BeamNode> next_beam;
 
-        for (auto node : beam) {
+        while (!beam.empty()) {
+            auto node = beam.top();
+            beam.pop();
             for (int8_t l = 0; l < evi.size(); l++) {
                 for (int8_t r = l + 1; r < evi.size(); r++) {
                     for (int8_t d = -3; d <= 3; d++) {
@@ -92,9 +107,7 @@ int main() {
                         for (int8_t j = evi[l]; j < evi[r]; j++) {
                             next_v[j] += d;
                         }
-                        vector<OP> next_ops = node.ops;
-                        next_ops.push_back({evi[l], (int8_t)(evi[r] - 1), d});
-                        next_beam.push({eval(next_v, v[i]), {next_ops, next_v}});
+                        next_beam.push({node.id, -1, {evi[l], (int8_t)(evi[r] - 1), d}, next_v, eval(next_v, v[i])});
                         if (next_beam.size() > BEAM_SIZE) {
                             next_beam.pop();
                         }
@@ -105,15 +118,30 @@ int main() {
 
         cerr << "next_beam.size() = " << next_beam.size() << endl;
 
-        beam.clear();
+        beam = priority_queue<BeamNode>();
         while (!next_beam.empty()) {
-            auto [_, node] = next_beam.top();
+            auto node = next_beam.top();
+            node.id = gen_id();
+            beam.push(node);
             next_beam.pop();
-            beam.push_back(node);
+
+            beam_history[node.id] = node;
         }
     }
 
-    auto ops = beam[0].ops;
+    vector<OP> ops;
+    BeamNode best_node;
+    while (!beam.empty()) {
+        best_node = beam.top();
+        beam.pop();
+    }
+
+    while (best_node.parent_id != -1) {
+        ops.push_back(beam_history[best_node.id].op);
+        best_node = beam_history[best_node.parent_id];
+    }
+
+    reverse(ops.begin(), ops.end());
 
     for (auto op : ops) {
         op.print();
