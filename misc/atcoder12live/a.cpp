@@ -46,6 +46,10 @@ struct OP {
 struct BeamNode {
     vector<OP> ops;
     vector<int8_t> v;
+
+    bool operator<(const BeamNode& other) const {
+        return ops.size() < other.ops.size();
+    }
 };
 
 int eval(vector<int8_t>& v, vector<int>& goal_vt) {
@@ -55,11 +59,6 @@ int eval(vector<int8_t>& v, vector<int>& goal_vt) {
     }
     return score;
 }
-
-struct NextBeamNode {
-    BeamNode node;
-    int score;
-};
 
 int main() {
     ios::sync_with_stdio(false);
@@ -73,7 +72,7 @@ int main() {
     vector<vector<int>> v(t, vector<int>(n));
     rep(i, t) rep(j, n) input(v[i][j]);
 
-    int BEAM_SIZE = 6;
+    int BEAM_SIZE = 30;
     vector<BeamNode> beam;
     beam.push_back({vector<OP>(), vector<int8_t>(n, 0)});
 
@@ -83,7 +82,8 @@ int main() {
         evi.push_back(j);
     }
     for (int i = 0; i < t; i++) {
-        vector<NextBeamNode> next_beam;
+        priority_queue<pair<int, BeamNode>> next_beam;
+
         for (auto node : beam) {
             for (int8_t l = 0; l < evi.size(); l++) {
                 for (int8_t r = l + 1; r < evi.size(); r++) {
@@ -94,7 +94,10 @@ int main() {
                         }
                         vector<OP> next_ops = node.ops;
                         next_ops.push_back({evi[l], (int8_t)(evi[r] - 1), d});
-                        next_beam.push_back({next_ops, next_v, eval(next_v, v[i])});
+                        next_beam.push({eval(next_v, v[i]), {next_ops, next_v}});
+                        if (next_beam.size() > BEAM_SIZE) {
+                            next_beam.pop();
+                        }
                     }
                 }
             }
@@ -102,16 +105,11 @@ int main() {
 
         cerr << "next_beam.size() = " << next_beam.size() << endl;
 
-        vector<int> goal_vt = v[i];
-
-        sort(next_beam.begin(), next_beam.end(), [&](NextBeamNode a, NextBeamNode b) {
-            return a.score < b.score;
-        });
-
         beam.clear();
-
-        for (int j = 0; j < min(BEAM_SIZE, (int)next_beam.size()); j++) {
-            beam.push_back(next_beam[j].node);
+        while (!next_beam.empty()) {
+            auto [_, node] = next_beam.top();
+            next_beam.pop();
+            beam.push_back(node);
         }
     }
 
