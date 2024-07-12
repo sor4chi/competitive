@@ -58,3 +58,17 @@ pub fn tsp(v: Vec<(usize, usize)>, limit: usize) -> Vec<usize> {
 
     best_order
 }
+
+pub fn output(used_orders: Vec<usize>, ops: Vec<(usize, usize)>) {
+    print!("{} ", used_orders.len());
+    for order in used_orders {
+        print!("{} ", order + 1);
+    }
+    println!();
+
+    print!("{} ", ops.len());
+    for op in ops {
+        print!("{} {} ", op.0, op.1);
+    }
+    println!();
+}
