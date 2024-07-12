@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::util::output;
+use crate::util::{output, tsp_with_validator};
 
 use super::super::{game::Game, game::N, util::manhattan};
 
@@ -132,8 +132,24 @@ impl Policy for InsertPolicy {
             }
             used_orders.insert(min_idx);
             ops = min_ops;
-            output(used_orders.clone().into_iter().collect(), ops.clone());
+            // output(used_orders.clone().into_iter().collect(), ops.clone());
         }
-        (used_orders.into_iter().collect(), ops)
+
+        let best_order = tsp_with_validator(ops.clone(), 1900, &|order| {
+            // convert order to pos
+            let mut pos = vec![];
+            for i in 0..order.len() {
+                pos.push(ops[order[i]]);
+            }
+            // output(used_orders.clone().into_iter().collect(), pos.clone());
+            self.game.validate(&pos)
+        });
+
+        let mut best_ops = vec![];
+        for i in 0..best_order.len() {
+            best_ops.push(ops[best_order[i]]);
+        }
+
+        (used_orders.into_iter().collect(), best_ops)
     }
 }
