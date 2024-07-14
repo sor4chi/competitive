@@ -74,6 +74,9 @@ impl Line {
 
         let s = s.abs();
         let t = t.abs();
+        if s + t == 0 {
+            return None;
+        }
 
         let x = (x1 * t + x2 * s) / (s + t);
         let y = (y1 * t + y2 * s) / (s + t);
@@ -86,7 +89,7 @@ impl Line {
     }
 }
 
-const DIRECTIONS: [(isize, isize); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+pub const DIRECTIONS: [(isize, isize); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
 
 fn parse_map(c: Vec<Vec<char>>) -> Vec<Line> {
     let mut lines = Vec::new();
@@ -247,13 +250,13 @@ fn construct_graph(input: &Input) -> WeightedUndirectedGraph {
 
 pub struct Game {
     /// 入力
-    input: Input,
+    pub input: Input,
     /// ゲームボードが保持しているラインのリスト
     lines: Vec<Line>,
     /// ラインのID(linesのインデックス)とそこを通ることで消せる座標のコレクション
-    resolve_map: HashMap<usize, HashSet<Point>>,
+    pub resolve_map: HashMap<usize, HashSet<Point>>,
     /// 隣接リスト
-    graph: WeightedUndirectedGraph,
+    pub graph: WeightedUndirectedGraph,
 }
 
 impl Game {
