@@ -1,6 +1,7 @@
 use proconio::input;
 
 pub mod game;
+pub mod graph;
 pub mod util;
 
 pub struct Input {
