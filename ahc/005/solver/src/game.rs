@@ -5,14 +5,18 @@ use crate::{
     Input,
 };
 
-#[derive(Debug)]
-struct Line {
+#[derive(Debug, Clone)]
+pub struct Line {
     a: Point,
     b: Point,
 }
 
 impl Line {
     fn new(a: Point, b: Point) -> Self {
+        assert!(
+            (a.x == b.x && a.y != b.y) || (a.x != b.x && a.y == b.y),
+            "Line must be horizontal or vertical"
+        );
         if a.x > b.x || (a.x == b.x && a.y > b.y) {
             Self { a: b, b: a }
         } else {
@@ -86,6 +90,25 @@ impl Line {
         }
 
         Some(Point::new(x as usize, y as usize))
+    }
+
+    pub fn get_inner_points(&self) -> HashSet<Point> {
+        let mut set = HashSet::new();
+        for x in self.a.x..=self.b.x {
+            for y in self.a.y..=self.b.y {
+                set.insert(Point::new(x, y));
+            }
+        }
+        set
+    }
+
+    pub fn get_dir(&self) -> usize {
+        // 0はVertical, 1はHorizontal
+        if self.a.x == self.b.x {
+            0
+        } else {
+            1
+        }
     }
 }
 
@@ -248,13 +271,16 @@ fn construct_graph(input: &Input) -> WeightedUndirectedGraph {
     graph
 }
 
+#[derive(Clone)]
 pub struct Game {
     /// 入力
     pub input: Input,
     /// ゲームボードが保持しているラインのリスト
-    lines: Vec<Line>,
+    pub lines: Vec<Line>,
     /// ラインのID(linesのインデックス)とそこを通ることで消せる座標のコレクション
     pub resolve_map: HashMap<usize, HashSet<Point>>,
+    /// 逆に、座標とそこを通るラインのIDのコレクション
+    pub resolve_map_rev: HashMap<Point, HashSet<usize>>,
     /// 隣接リスト
     pub graph: WeightedUndirectedGraph,
 }
@@ -265,10 +291,20 @@ impl Game {
         lines.append(&mut parse_map(input.c.clone()));
         let resolve_map = get_resolve_map(&lines);
         let graph = construct_graph(&input);
+        let mut resolve_map_rev = HashMap::new();
+        for (id, set) in resolve_map.iter() {
+            for p in set.iter() {
+                resolve_map_rev
+                    .entry(*p)
+                    .or_insert(HashSet::new())
+                    .insert(*id);
+            }
+        }
         Self {
             input,
             lines,
             resolve_map,
+            resolve_map_rev,
             graph,
         }
     }

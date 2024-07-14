@@ -5,6 +5,7 @@ pub mod graph;
 pub mod strategy;
 pub mod util;
 
+#[derive(Clone)]
 pub struct Input {
     pub n: usize,
     pub s: (usize, usize),

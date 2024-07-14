@@ -94,4 +94,11 @@ impl WeightedUndirectedGraph {
     pub fn get_all_nodes(&self) -> Vec<Point> {
         self.graph.keys().cloned().collect()
     }
+
+    pub fn remove_node(&mut self, p: Point) {
+        self.graph.remove(&p);
+        for (_, edges) in self.graph.iter_mut() {
+            edges.retain(|&(np, _)| np != p);
+        }
+    }
 }
