@@ -1,19 +1,15 @@
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet, VecDeque};
-
-use crate::game::Line;
-use crate::graph::WeightedUndirectedGraph;
+use std::collections::{HashSet, VecDeque};
 
 use super::super::{game::Game, game::DIRECTIONS, graph::Point};
-use super::{Direction, Strategy};
+use super::{Direction, Solver};
 
-pub struct GreedyStrategy<'a> {
+pub struct GreedySolver<'a> {
     game: &'a Game,
 }
 
-impl GreedyStrategy<'_> {
-    pub fn new(game: &Game) -> GreedyStrategy {
-        GreedyStrategy { game }
+impl GreedySolver<'_> {
+    pub fn new(game: &Game) -> GreedySolver {
+        GreedySolver { game }
     }
 }
 
@@ -36,7 +32,7 @@ impl GreedyStrategy<'_> {
 //     graph
 // }
 
-impl Strategy for GreedyStrategy<'_> {
+impl Solver for GreedySolver<'_> {
     fn solve(&self) -> Vec<Direction> {
         let mut game = self.game.clone();
         // とりあえずgraphを頼りに全交差点を通るような経路を作る

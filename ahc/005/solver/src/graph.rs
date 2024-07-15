@@ -3,7 +3,7 @@ use std::{
     collections::{BinaryHeap, HashMap},
 };
 
-use crate::strategy::Direction;
+use crate::solver::Direction;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Point {

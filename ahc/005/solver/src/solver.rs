@@ -25,6 +25,6 @@ impl Display for Direction {
     }
 }
 
-pub trait Strategy {
+pub trait Solver {
     fn solve(&self) -> Vec<Direction>;
 }

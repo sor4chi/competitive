@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::{
+use super::{
     graph::{Point, WeightedUndirectedGraph},
     Input,
 };

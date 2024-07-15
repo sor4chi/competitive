@@ -2,7 +2,7 @@ use proconio::input;
 
 pub mod game;
 pub mod graph;
-pub mod strategy;
+pub mod solver;
 pub mod util;
 
 #[derive(Clone)]
