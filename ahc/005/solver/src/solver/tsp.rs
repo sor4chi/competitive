@@ -269,10 +269,10 @@ impl Solver for TSPSolver<'_> {
             .collect::<HashMap<_, _>>();
         let center = Point::from(self.game.input.s);
         all_dist_map.insert(center, self.game.graph.dijkstra(center));
-        let TRIAL = 15;
+        let TRIAL = 100;
         let mut best_path = vec![];
         let mut best_score = std::usize::MAX;
-        let TL = 2850;
+        let TL = 2900;
         for _ in 0..TRIAL {
             let (path, score) =
                 self.inner_solve(all_points.clone(), all_dist_map.clone(), TL / TRIAL);
