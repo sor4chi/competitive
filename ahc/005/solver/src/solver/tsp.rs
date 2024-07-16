@@ -158,7 +158,6 @@ impl TSPSolver<'_> {
                 temp = start_temp + (end_temp - start_temp) * elapsed as f64 / limit as f64;
             }
 
-            eprintln!("best score: {}", best_score);
             eprintln!("iter: {}", iter);
 
             let mut best_ops = vec![];
@@ -170,11 +169,64 @@ impl TSPSolver<'_> {
         };
 
         // それぞれの点を巡回する
+        let mut cleared_lines = HashSet::new();
+        let mut actual_score = 0;
+        let mut current = best_operation[0];
         for i in 0..best_operation.len() - 1 {
-            let mut current = best_operation[i];
             let next = best_operation[i + 1];
+            let mut is_already_all_covered = true;
+            if let Some(cover_next_lines) = game.resolve_map_rev.get(&next) {
+                for line_id in cover_next_lines.iter() {
+                    if !cleared_lines.contains(line_id) {
+                        is_already_all_covered = false;
+                        break;
+                    }
+                }
+            } else {
+                is_already_all_covered = false;
+            }
+            if is_already_all_covered {
+                continue;
+            }
             let dij = dist_map.get(&current).unwrap();
             let to_the_next_path = graph.get_path(current, next, dij);
+            actual_score += dij.get(&next).unwrap();
+            for p in to_the_next_path.iter().skip(1) {
+                while current.x < p.x {
+                    path.push(Direction::Down);
+                    current.x += 1;
+                }
+                while current.x > p.x {
+                    path.push(Direction::Up);
+                    current.x -= 1;
+                }
+                while current.y < p.y {
+                    path.push(Direction::Right);
+                    current.y += 1;
+                }
+                while current.y > p.y {
+                    path.push(Direction::Left);
+                    current.y -= 1;
+                }
+                if let Some(crossing_lines) = game.resolve_map_rev.get(p) {
+                    for line_id in crossing_lines.iter() {
+                        cleared_lines.insert(*line_id);
+                    }
+                }
+            }
+            current = next;
+        }
+
+        if current != best_operation[best_operation.len() - 1] {
+            eprintln!(
+                "current: {:?}, last: {:?}",
+                current,
+                best_operation[best_operation.len() - 1]
+            );
+            let dij = dist_map.get(&current).unwrap();
+            let to_the_next_path =
+                graph.get_path(current, best_operation[best_operation.len() - 1], dij);
+            actual_score += dij.get(&best_operation[best_operation.len() - 1]).unwrap();
             for p in to_the_next_path.iter().skip(1) {
                 while current.x < p.x {
                     path.push(Direction::Down);
@@ -195,7 +247,7 @@ impl TSPSolver<'_> {
             }
         }
 
-        (path, best_score)
+        (path, actual_score)
     }
 }
 
@@ -204,14 +256,16 @@ impl Solver for TSPSolver<'_> {
         let TRIAL = 15;
         let mut best_path = vec![];
         let mut best_score = std::usize::MAX;
-        let TL = 2900;
+        let TL = 2850;
         for _ in 0..TRIAL {
             let (path, score) = self.inner_solve(TL / TRIAL);
+            eprintln!("score: {}", score);
             if score < best_score {
                 best_path = path;
                 best_score = score;
             }
         }
+        eprintln!("best score: {}", best_score);
         best_path
     }
 }
