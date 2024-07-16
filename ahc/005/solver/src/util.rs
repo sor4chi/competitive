@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 pub struct IdGenerator {
     id: usize,
 }

@@ -12,4 +12,4 @@ rand = "0.8.5"
 rand_pcg = "0.3.1"
 
 [build-dependencies]
-rustsourcebundler = { git = "https://github.com/lpenz/rust-sourcebundler" }
+rustsourcebundler = { path = "/Users/sorachi/Clones/OSS/Fork/rust-sourcebundler" }

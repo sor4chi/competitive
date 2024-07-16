@@ -1,14 +1,22 @@
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
+    hash::Hash,
 };
 
 use crate::solver::Direction;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Point {
     pub x: usize,
     pub y: usize,
+}
+
+impl Hash for Point {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let n = self.x * 70 + self.y;
+        n.hash(state);
+    }
 }
 
 impl Point {
@@ -57,18 +65,20 @@ impl WeightedUndirectedGraph {
         self.graph.get(&p)
     }
 
+    // startから各点への最短距離を返す
     pub fn dijkstra(&self, start: Point) -> HashMap<Point, usize> {
         let mut dist = HashMap::new();
-        let mut pq = BinaryHeap::new();
-        pq.push(Reverse((0, start)));
-        while let Some(Reverse((d, p))) = pq.pop() {
-            if dist.contains_key(&p) {
+        let mut heap = BinaryHeap::new();
+        dist.insert(start, 0);
+        heap.push((Reverse(0), start));
+        while let Some((Reverse(d), p)) = heap.pop() {
+            if dist[&p] < d {
                 continue;
             }
-            dist.insert(p, d);
             for &(np, w) in &self.graph[&p] {
-                if !dist.contains_key(&np) {
-                    pq.push(Reverse((d + w, np)));
+                if !dist.contains_key(&np) || dist[&np] > d + w {
+                    dist.insert(np, d + w);
+                    heap.push((Reverse(d + w), np));
                 }
             }
         }
@@ -79,13 +89,15 @@ impl WeightedUndirectedGraph {
         let mut path = vec![goal];
         let mut current = goal;
         while current != start {
+            let mut next = Point::from((0, 0));
             for &(np, w) in &self.graph[&current] {
-                if dist[&current] == dist[&np] + w {
-                    path.push(np);
-                    current = np;
+                if dist[&np] + w == dist[&current] {
+                    next = np;
                     break;
                 }
             }
+            path.push(next);
+            current = next;
         }
         path.reverse();
         path
@@ -100,5 +112,23 @@ impl WeightedUndirectedGraph {
         for (_, edges) in self.graph.iter_mut() {
             edges.retain(|&(np, _)| np != p);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dijkstra() {
+        let mut graph = WeightedUndirectedGraph::new();
+        graph.add_edge(Point::from((0, 0)), Point::from((1, 0)), 3);
+        graph.add_edge(Point::from((1, 0)), Point::from((1, 1)), 2);
+        graph.add_edge(Point::from((0, 0)), Point::from((0, 1)), 4);
+        graph.add_edge(Point::from((0, 1)), Point::from((1, 1)), 2);
+        let dist = graph.dijkstra(Point::from((0, 0)));
+        assert_eq!(dist[&Point::from((0, 0))], 0);
+        assert_eq!(dist[&Point::from((1, 0))], 3);
+        assert_eq!(dist[&Point::from((1, 1))], 5);
     }
 }

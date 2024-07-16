@@ -1,6 +1,7 @@
 use std::fmt::{self, Display};
 
 pub mod greedy;
+pub mod tsp;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {

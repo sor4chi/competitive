@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use super::{
+use crate::{
     graph::{Point, WeightedUndirectedGraph},
     Input,
 };
@@ -185,6 +185,7 @@ fn construct_graph(input: &Input) -> WeightedUndirectedGraph {
         point: Point,
         cost: usize,
     }
+    let start = Point::from(input.s);
     let mut queue = VecDeque::new();
     let mut visited = HashSet::new();
     fn is_cross_point(input: &Input, x: usize, y: usize) -> bool {
@@ -208,27 +209,26 @@ fn construct_graph(input: &Input) -> WeightedUndirectedGraph {
         }
         is_x_dir && is_y_dir
     }
-    let start = {
-        let mut tmp = Point::new(0, 0);
-        for x in 0..input.n {
-            for y in 0..input.n {
-                if input.c[x][y] == '#' {
-                    continue;
-                }
-                if is_cross_point(input, x, y) {
-                    tmp = Point::new(x, y);
-                    break;
-                }
-            }
-        }
-        tmp
-    };
+    // let start = {
+    //     let mut tmp = Point::new(0, 0);
+    //     for x in 0..input.n {
+    //         for y in 0..input.n {
+    //             if input.c[x][y] == '#' {
+    //                 continue;
+    //             }
+    //             if is_cross_point(input, x, y) {
+    //                 tmp = Point::new(x, y);
+    //                 break;
+    //             }
+    //         }
+    //     }
+    //     tmp
+    // };
     queue.push_back(State {
         point: start,
         current: start,
         cost: 0,
     });
-    visited.insert(start);
     while let Some(State {
         point,
         current,
@@ -237,31 +237,33 @@ fn construct_graph(input: &Input) -> WeightedUndirectedGraph {
     {
         for (dx, dy) in DIRECTIONS.iter() {
             let np = Point::new(
-                (point.x as isize + dx) as usize,
-                (point.y as isize + dy) as usize,
+                (current.x as isize + dx) as usize,
+                (current.y as isize + dy) as usize,
             );
-            if visited.contains(&np) {
-                continue;
-            }
             if np.x >= input.n || np.y >= input.n {
                 continue;
             }
-            visited.insert(np);
             if input.c[np.x][np.y] == '#' {
+                continue;
+            }
+            if visited.contains(&np) {
                 continue;
             }
             let next_cost = cost + input.c[np.x][np.y].to_digit(10).unwrap() as usize;
             if is_cross_point(input, np.x, np.y) {
-                graph.add_edge(current, np, next_cost);
-                queue.push_back(State {
-                    point: np,
-                    current: np,
-                    cost: 0,
-                });
+                if point != np {
+                    graph.add_edge(point, np, next_cost);
+                    queue.push_back(State {
+                        point: np,
+                        current: np,
+                        cost: 0,
+                    });
+                }
             } else {
+                visited.insert(np);
                 queue.push_back(State {
-                    point: np,
-                    current,
+                    point,
+                    current: np,
                     cost: next_cost,
                 });
             }

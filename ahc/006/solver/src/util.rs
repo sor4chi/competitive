@@ -59,7 +59,7 @@ pub fn tsp(v: Vec<(usize, usize)>, limit: usize) -> Vec<usize> {
     best_order
 }
 
-pub fn tsp_with_validator(
+pub fn tsp(
     v: Vec<(usize, usize)>,
     limit: usize,
     validator: &dyn Fn(&Vec<usize>) -> bool,
