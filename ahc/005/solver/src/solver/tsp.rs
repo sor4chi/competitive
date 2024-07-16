@@ -15,7 +15,12 @@ impl TSPSolver<'_> {
     pub fn new(game: &Game) -> TSPSolver {
         TSPSolver { game }
     }
-    fn inner_solve(&self, inner_limit: usize) -> (Vec<Direction>, usize) {
+    fn inner_solve(
+        &self,
+        all_points: HashMap<Point, HashSet<usize>>,
+        all_dist_map: HashMap<Point, HashMap<Point, usize>>,
+        inner_limit: usize,
+    ) -> (Vec<Direction>, usize) {
         let game = self.game.clone();
         // とりあえずgraphを頼りに全交差点を通るような経路を作る
         let mut path = vec![];
@@ -25,12 +30,6 @@ impl TSPSolver<'_> {
         // 必要なポイントを満たす
         let timer = Instant::now();
         let first_tl = inner_limit / 4;
-        let all_points = game
-            .resolve_map_rev
-            .clone()
-            .iter()
-            .map(|(k, v)| (*k, v.clone()))
-            .collect::<HashMap<_, _>>();
         let mut best_points = all_points.clone();
         let mut best_score = best_points.len();
         let all_lines = game
@@ -86,11 +85,7 @@ impl TSPSolver<'_> {
                     / first_tl as f64;
         }
 
-        let mut dist_map = HashMap::new();
-        for (point, _) in best_points.iter() {
-            dist_map.insert(point, graph.dijkstra(*point));
-        }
-        dist_map.insert(&center, graph.dijkstra(center));
+        let dist_map = all_dist_map;
 
         let mut best_score = 0;
         let best_operation = {
@@ -175,11 +170,12 @@ impl TSPSolver<'_> {
         for i in 0..best_operation.len() - 1 {
             let next = best_operation[i + 1];
             let mut is_already_all_covered = true;
+            let mut needs_to_clear = HashSet::new();
             if let Some(cover_next_lines) = game.resolve_map_rev.get(&next) {
                 for line_id in cover_next_lines.iter() {
                     if !cleared_lines.contains(line_id) {
                         is_already_all_covered = false;
-                        break;
+                        needs_to_clear.insert(*line_id);
                     }
                 }
             } else {
@@ -192,6 +188,9 @@ impl TSPSolver<'_> {
             let to_the_next_path = graph.get_path(current, next, dij);
             actual_score += dij.get(&next).unwrap();
             for p in to_the_next_path.iter().skip(1) {
+                if needs_to_clear.is_empty() {
+                    break;
+                }
                 while current.x < p.x {
                     path.push(Direction::Down);
                     current.x += 1;
@@ -211,10 +210,11 @@ impl TSPSolver<'_> {
                 if let Some(crossing_lines) = game.resolve_map_rev.get(p) {
                     for line_id in crossing_lines.iter() {
                         cleared_lines.insert(*line_id);
+                        needs_to_clear.remove(line_id);
                     }
                 }
             }
-            current = next;
+            // current = next;
         }
 
         if current != best_operation[best_operation.len() - 1] {
@@ -253,12 +253,29 @@ impl TSPSolver<'_> {
 
 impl Solver for TSPSolver<'_> {
     fn solve(&self) -> Vec<Direction> {
+        let all_points = self
+            .game
+            .resolve_map_rev
+            .clone()
+            .iter()
+            .map(|(k, v)| (*k, v.clone()))
+            .collect::<HashMap<_, _>>();
+        let mut all_dist_map = self
+            .game
+            .resolve_map_rev
+            .clone()
+            .iter()
+            .map(|(k, _)| (*k, self.game.graph.dijkstra(*k)))
+            .collect::<HashMap<_, _>>();
+        let center = Point::from(self.game.input.s);
+        all_dist_map.insert(center, self.game.graph.dijkstra(center));
         let TRIAL = 15;
         let mut best_path = vec![];
         let mut best_score = std::usize::MAX;
         let TL = 2850;
         for _ in 0..TRIAL {
-            let (path, score) = self.inner_solve(TL / TRIAL);
+            let (path, score) =
+                self.inner_solve(all_points.clone(), all_dist_map.clone(), TL / TRIAL);
             eprintln!("score: {}", score);
             if score < best_score {
                 best_path = path;
