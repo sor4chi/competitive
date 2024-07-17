@@ -9,6 +9,7 @@ ac-library-rs = "0.1.1"
 itertools = "0.13.0"
 proconio = "0.5.0"
 rand = "0.8.5"
+rand_core = "0.6.4"
 rand_pcg = "0.3.1"
 
 [build-dependencies]

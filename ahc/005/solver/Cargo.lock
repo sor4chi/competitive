@@ -358,6 +358,7 @@ dependencies = [
  "itertools",
  "proconio",
  "rand",
+ "rand_core",
  "rand_pcg",
  "rustsourcebundler",
 ]

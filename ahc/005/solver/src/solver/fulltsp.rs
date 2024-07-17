@@ -1,7 +1,9 @@
-use rand::prelude::IteratorRandom;
-use rand::Rng;
+use crate::rand_xorshift;
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
+
+use rand::seq::IteratorRandom;
+use rand::{Rng, SeedableRng};
 
 use super::super::{game::Game, graph::Point};
 use super::{Direction, Solver};
@@ -77,10 +79,14 @@ impl FullTSPSolver<'_> {
         let mut v = vec![start];
         v.extend(all_points.keys().copied().collect::<Vec<_>>());
         v.push(start);
+        let mut v_rev = HashMap::new();
+        for (i, vi) in v.iter().enumerate() {
+            v_rev.insert(vi, i);
+        }
 
         let best_order = {
             // === FROM: 焼きなましのための前準備 ===
-            let mut best_order = (0..v.len()).map(|i| i).collect::<Vec<_>>();
+            let mut best_order: Vec<u16> = (0..v.len()).map(|i| i as u16).collect::<Vec<_>>();
             // n手目にbest_score_cache[n]の距離がかかるということをキャッシュしておく
             let mut best_score_cache = vec![];
             for i in 0..v.len() - 1 {
@@ -100,7 +106,7 @@ impl FullTSPSolver<'_> {
             let timer = Instant::now();
             let start_temp = 100.0;
             let end_temp = 0.001;
-            let mut rng = rand::thread_rng();
+            let mut rng = rand_xorshift::XorShiftRng::from_seed([0; 16]);
             let mut temp = start_temp;
             let mut iter = 0;
 
@@ -114,7 +120,7 @@ impl FullTSPSolver<'_> {
                         // 2-opt
                         let i = rng.gen_range(1..best_order.len() - 2);
                         let j = rng.gen_range(i + 1..best_order.len() - 1);
-                        let mut new_order = best_order.clone();
+                        let mut new_order: Vec<u16> = best_order.clone();
                         new_order[i..=j].reverse();
                         // スコアを差分計算する
                         let mut new_score = best_score;
@@ -151,33 +157,34 @@ impl FullTSPSolver<'_> {
                         if *delete == start {
                             continue;
                         }
-                        let mut best_resolve_map_clone = best_resolve_map.clone();
-                        let mut best_resolve_map_rev_clone = best_resolve_map_rev.clone();
-                        // 削除する頂点が属している辺を取得
-                        let edges = best_resolve_map_rev_clone.get(delete).unwrap();
-                        // それぞれの辺について、削除する頂点を削除してもbest_resolve_map.size()がnを保っているか確認
+                        // 削除する頂点が属している辺が他の頂点に属していない場合はスキップ
                         let mut ok = true;
+                        let edges = best_resolve_map_rev.get(delete).unwrap();
+                        for &edge in edges {
+                            if best_resolve_map.get(&edge).unwrap().len() == 1 {
+                                ok = false;
+                                break;
+                            }
+                        }
+                        if !ok {
+                            continue;
+                        }
+                        let mut best_resolve_map_clone = best_resolve_map.clone();
+                        // 削除する頂点が属している辺を取得
                         for &edge in edges {
                             // 辺から頂点を削除
                             best_resolve_map_clone
                                 .get_mut(&edge)
                                 .unwrap()
                                 .remove(delete);
-                            if best_resolve_map_clone.get(&edge).unwrap().is_empty() {
-                                ok = false;
-                                break;
-                            }
                         }
-                        // 削除する頂点が属している辺がnを保っていない場合はスキップ
-                        if !ok {
-                            continue;
-                        }
+                        let mut best_resolve_map_rev_clone = best_resolve_map_rev.clone();
                         // 頂点を削除
                         best_resolve_map_rev_clone.remove(delete);
                         // 削除する頂点をbest_orderから削除
                         let mut new_order = best_order.clone();
                         // 削除する頂点のIdを取得
-                        let delete_node_id = v.iter().position(|&x| x == *delete).unwrap();
+                        let delete_node_id = *v_rev.get(delete).unwrap() as u16;
                         let delete_node_id_idx =
                             new_order.iter().position(|&x| x == delete_node_id).unwrap();
                         new_order.remove(delete_node_id_idx);
@@ -217,7 +224,7 @@ impl FullTSPSolver<'_> {
                         // 挿入する頂点をbest_orderに挿入
                         let mut new_order = best_order.clone();
                         // 頂点のIdを取得
-                        let insert_node_id = v.iter().position(|&x| x == *insert).unwrap();
+                        let insert_node_id = *v_rev.get(insert).unwrap() as u16;
                         new_order.insert(insert_idx, insert_node_id);
                         // スコアを差分計算する
                         let mut new_score = best_score;
@@ -300,11 +307,11 @@ impl FullTSPSolver<'_> {
             }
             let dij = all_dist_map.get(&current).unwrap();
             let to_the_next_path = self.game.graph.get_path(current, next, dij);
-            actual_score += dij.get(&next).unwrap();
             for p in to_the_next_path.iter().skip(1) {
                 if needs_to_clear.is_empty() {
                     break;
                 }
+                actual_score += dij[p] - dij[&current];
                 while current.x < p.x {
                     path.push(Direction::Down);
                     current.x += 1;
@@ -336,8 +343,8 @@ impl FullTSPSolver<'_> {
                 self.game
                     .graph
                     .get_path(current, best_operation[best_operation.len() - 1], dij);
-            actual_score += dij.get(&best_operation[best_operation.len() - 1]).unwrap();
             for p in to_the_next_path.iter().skip(1) {
+                actual_score += dij[p] - dij[&current];
                 while current.x < p.x {
                     path.push(Direction::Down);
                     current.x += 1;
@@ -379,7 +386,7 @@ impl Solver for FullTSPSolver<'_> {
             .collect::<HashMap<_, _>>();
         let center = Point::from(self.game.input.s);
         all_dist_map.insert(center, self.game.graph.dijkstra(center));
-        const TRIAL: usize = 5;
+        const TRIAL: usize = 1;
         let mut best_path = vec![];
         let mut best_score = usize::MAX;
         const TL: usize = 2900;

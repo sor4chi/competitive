@@ -2,6 +2,7 @@ use proconio::input;
 
 pub mod game;
 pub mod graph;
+pub mod rand_xorshift;
 pub mod solver;
 pub mod util;
 
