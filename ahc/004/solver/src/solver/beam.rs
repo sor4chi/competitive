@@ -1,4 +1,4 @@
-use std::{collections::HashSet, hash::Hash, time::Instant};
+use std::collections::{BinaryHeap, HashSet};
 
 use crate::Input;
 
@@ -10,6 +10,7 @@ pub struct BeamSolver {
 }
 
 impl BeamSolver {
+    #[inline]
     pub fn new(input: Input) -> Self {
         let mut dict = vec![];
         for s in &input.ss {
@@ -19,6 +20,7 @@ impl BeamSolver {
         BeamSolver { input, dict }
     }
 
+    #[inline]
     fn bisect_left(&self, s: &str) -> usize {
         let mut left = 0;
         let mut right = self.dict.len();
@@ -33,6 +35,7 @@ impl BeamSolver {
         left
     }
 
+    #[inline]
     fn bisect_right(&self, s: &str) -> usize {
         let mut left = 0;
         let mut right = self.dict.len();
@@ -47,6 +50,7 @@ impl BeamSolver {
         left
     }
 
+    #[inline]
     fn find_connected_string(&self, banned: &HashSet<usize>) -> HorizontalBeam {
         let mut beams = vec![];
         for (id, first_str) in self.dict.iter().enumerate() {
@@ -66,7 +70,7 @@ impl BeamSolver {
         while best_string.is_empty() {
             iter += 1;
             eprintln!("iter: {}", iter);
-            let mut next_beams: Vec<HorizontalBeam> = vec![];
+            let mut next_beams: BinaryHeap<HorizontalBeam> = BinaryHeap::new();
             for beam in &beams {
                 // suffix n文字を取り出す
                 for suffix_num in 1..=beam.current.len().min(12) {
@@ -88,12 +92,16 @@ impl BeamSolver {
                             next_beam.score = evaluate_horizontal(&self.input, &next_beam);
                             next_beam.used.insert(i);
                             next_beams.push(next_beam);
+                            if next_beams.len() >= BEAM_WIDTH {
+                                next_beams.pop();
+                            }
                         } else {
                             break;
                         }
                     }
                 }
             }
+            let mut next_beams = next_beams.into_iter().collect::<Vec<_>>();
             next_beams.sort_by(|a, b| {
                 if a.current == b.current {
                     a.used.len().cmp(&b.used.len())
@@ -121,13 +129,26 @@ impl BeamSolver {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct HorizontalBeam {
     score: usize,
     current: String,
     used: HashSet<usize>,
 }
 
+impl PartialOrd for HorizontalBeam {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.score.cmp(&other.score))
+    }
+}
+
+impl Ord for HorizontalBeam {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.score.cmp(&other.score)
+    }
+}
+
+#[inline]
 fn evaluate_horizontal(input: &Input, beam: &HorizontalBeam) -> usize {
     // current.len()が小さいほど、usedが大きいほど良い
     let mut score = 1000000;
@@ -136,7 +157,7 @@ fn evaluate_horizontal(input: &Input, beam: &HorizontalBeam) -> usize {
     score
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct VerticalBeam {
     score: usize,
     board: Vec<Vec<char>>,
@@ -144,7 +165,20 @@ struct VerticalBeam {
     used_row: HashSet<usize>,
 }
 
-fn evaluate_vertical(input: &Input, beam: &VerticalBeam) -> usize {
+impl PartialOrd for VerticalBeam {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.score.cmp(&other.score))
+    }
+}
+
+impl Ord for VerticalBeam {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.score.cmp(&other.score)
+    }
+}
+
+#[inline]
+fn evaluate_vertical(beam: &VerticalBeam) -> usize {
     // usedの数で評価
     let mut score = 1000000;
     score -= beam.used.len();
@@ -177,7 +211,7 @@ impl Solver for BeamSolver {
         }
         self.dict.retain(|s| !s.is_empty());
 
-        let beam_width = 10;
+        let beam_width = 18;
         let mut beams: Vec<VerticalBeam> = vec![VerticalBeam {
             score: 0,
             board: vec![vec!['.'; self.input.n]; self.input.n],
@@ -186,7 +220,7 @@ impl Solver for BeamSolver {
         }];
         for i in 0..self.input.n {
             eprintln!("iter: {}", i);
-            let mut next_beams = vec![];
+            let mut next_beams: BinaryHeap<VerticalBeam> = BinaryHeap::new();
             for beam in beams {
                 for (row_id, row) in rows.iter().enumerate() {
                     if beam.used_row.contains(&row_id) {
@@ -230,11 +264,15 @@ impl Solver for BeamSolver {
                             used: next_used,
                             used_row: next_used_row,
                         };
-                        next_beam.score = evaluate_vertical(&self.input, &next_beam);
+                        next_beam.score = evaluate_vertical(&next_beam);
                         next_beams.push(next_beam);
+                        if next_beams.len() >= beam_width {
+                            next_beams.pop();
+                        }
                     }
                 }
             }
+            let mut next_beams = next_beams.into_iter().collect::<Vec<_>>();
             next_beams.sort_by_key(|beam| beam.score);
             next_beams.truncate(beam_width);
             beams = next_beams;
