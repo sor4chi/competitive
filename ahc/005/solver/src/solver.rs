@@ -1,5 +1,6 @@
 use std::fmt::{self, Display};
 
+pub mod fulltsp;
 pub mod greedy;
 pub mod tsp;
 

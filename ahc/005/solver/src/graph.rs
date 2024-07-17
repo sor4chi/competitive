@@ -36,6 +36,27 @@ impl Point {
             Direction::Right => Self::from((self.x + 1, self.y)),
         }
     }
+
+    pub fn direction_to(&self, other: Point) -> Direction {
+        if self.x < other.x {
+            Direction::Down
+        } else if self.x > other.x {
+            Direction::Up
+        } else if self.y < other.y {
+            Direction::Right
+        } else {
+            Direction::Left
+        }
+    }
+
+    pub fn apply_dir(&mut self, dir: Direction) {
+        match dir {
+            Direction::Down => self.x += 1,
+            Direction::Up => self.x -= 1,
+            Direction::Right => self.y += 1,
+            Direction::Left => self.y -= 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
