@@ -1,12 +1,18 @@
-use proconio::input;
-use solver::game::Game;
+use solver::{
+    solver::{beam::BeamSolver, Solver},
+    Input,
+};
 
 extern crate solver;
 
 fn main() {
-    input! {
-        n: usize,
+    let input = Input::default();
+    let solver = BeamSolver::new(input);
+    let result = solver.solve();
+    for row in result {
+        for cell in row {
+            print!("{}", cell);
+        }
+        println!();
     }
-
-    let game = Game::new(n);
 }
