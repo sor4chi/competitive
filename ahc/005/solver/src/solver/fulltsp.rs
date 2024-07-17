@@ -23,6 +23,7 @@ const NEIGHBORS: [Neighbor; 5] = [
     Neighbor::DELETE,
     Neighbor::INSERT,
 ];
+
 const MONITOR: bool = false;
 
 impl FullTSPSolver<'_> {
@@ -267,7 +268,96 @@ impl FullTSPSolver<'_> {
             best_order
         };
 
-        self.get_path(&all_dist_map, &v, best_order)
+        // self.get_path(&all_dist_map, &v, best_order)
+
+        let mut path = vec![];
+        let mut best_operation = vec![];
+        for i in 0..best_order.len() {
+            let point = v[best_order[i] as usize];
+            best_operation.push(point);
+        }
+
+        // それぞれの点を巡回する
+        let mut cleared_lines = HashSet::new();
+        let mut actual_score = 0;
+        let mut current = best_operation[0];
+        for i in 0..best_operation.len() - 1 {
+            let next = best_operation[i + 1];
+            let mut is_already_all_covered = true;
+            let mut needs_to_clear = HashSet::new();
+            if let Some(cover_next_lines) = self.game.resolve_map_rev.get(&next) {
+                for line_id in cover_next_lines.iter() {
+                    if !cleared_lines.contains(line_id) {
+                        is_already_all_covered = false;
+                        needs_to_clear.insert(*line_id);
+                    }
+                }
+            } else {
+                is_already_all_covered = false;
+            }
+            if is_already_all_covered {
+                continue;
+            }
+            let dij = all_dist_map.get(&current).unwrap();
+            let to_the_next_path = self.game.graph.get_path(current, next, dij);
+            actual_score += dij.get(&next).unwrap();
+            for p in to_the_next_path.iter().skip(1) {
+                if needs_to_clear.is_empty() {
+                    break;
+                }
+                while current.x < p.x {
+                    path.push(Direction::Down);
+                    current.x += 1;
+                }
+                while current.x > p.x {
+                    path.push(Direction::Up);
+                    current.x -= 1;
+                }
+                while current.y < p.y {
+                    path.push(Direction::Right);
+                    current.y += 1;
+                }
+                while current.y > p.y {
+                    path.push(Direction::Left);
+                    current.y -= 1;
+                }
+                if let Some(crossing_lines) = self.game.resolve_map_rev.get(p) {
+                    for line_id in crossing_lines.iter() {
+                        cleared_lines.insert(*line_id);
+                        needs_to_clear.remove(line_id);
+                    }
+                }
+            }
+        }
+
+        if current != best_operation[best_operation.len() - 1] {
+            let dij = all_dist_map.get(&current).unwrap();
+            let to_the_next_path =
+                self.game
+                    .graph
+                    .get_path(current, best_operation[best_operation.len() - 1], dij);
+            actual_score += dij.get(&best_operation[best_operation.len() - 1]).unwrap();
+            for p in to_the_next_path.iter().skip(1) {
+                while current.x < p.x {
+                    path.push(Direction::Down);
+                    current.x += 1;
+                }
+                while current.x > p.x {
+                    path.push(Direction::Up);
+                    current.x -= 1;
+                }
+                while current.y < p.y {
+                    path.push(Direction::Right);
+                    current.y += 1;
+                }
+                while current.y > p.y {
+                    path.push(Direction::Left);
+                    current.y -= 1;
+                }
+            }
+        }
+
+        (path, actual_score)
     }
 }
 
@@ -289,7 +379,7 @@ impl Solver for FullTSPSolver<'_> {
             .collect::<HashMap<_, _>>();
         let center = Point::from(self.game.input.s);
         all_dist_map.insert(center, self.game.graph.dijkstra(center));
-        const TRIAL: usize = 3;
+        const TRIAL: usize = 5;
         let mut best_path = vec![];
         let mut best_score = usize::MAX;
         const TL: usize = 2900;
