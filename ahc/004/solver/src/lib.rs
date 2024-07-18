@@ -18,3 +18,20 @@ impl Default for Input {
         Input { n, m, ss }
     }
 }
+
+pub struct IDGenerator {
+    id: usize,
+}
+
+impl IDGenerator {
+    pub fn new() -> Self {
+        IDGenerator { id: 0 }
+    }
+
+    #[inline]
+    pub fn generate(&mut self) -> usize {
+        let id = self.id;
+        self.id += 1;
+        id
+    }
+}

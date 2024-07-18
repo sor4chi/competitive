@@ -1,6 +1,9 @@
-use std::collections::{BinaryHeap, HashSet};
+use std::{
+    collections::{BinaryHeap, HashMap, HashSet},
+    time::Instant,
+};
 
-use crate::Input;
+use crate::{IDGenerator, Input};
 
 use super::Solver;
 
@@ -36,21 +39,6 @@ impl BeamSolver {
     }
 
     #[inline]
-    fn bisect_right(&self, s: &str) -> usize {
-        let mut left = 0;
-        let mut right = self.dict.len();
-        while left < right {
-            let mid = (left + right) / 2;
-            if self.dict[mid] <= s.to_string() {
-                left = mid + 1;
-            } else {
-                right = mid;
-            }
-        }
-        left
-    }
-
-    #[inline]
     fn find_connected_string(&self, banned: &HashSet<usize>) -> HorizontalBeam {
         let mut beams = vec![];
         for (id, first_str) in self.dict.iter().enumerate() {
@@ -59,21 +47,20 @@ impl BeamSolver {
                 current: first_str.clone(),
                 used: HashSet::new(),
             };
-            next_beam.score = evaluate_horizontal(&self.input, &next_beam);
+            next_beam.score = evaluate_horizontal(&self.dict, &self.input, &next_beam);
             next_beam.used.insert(id);
             beams.push(next_beam);
         }
-        const BEAM_WIDTH: usize = 150;
-        let mut best_string = String::new();
+        const BEAM_WIDTH: usize = 500;
 
         let mut iter = 0;
-        while best_string.is_empty() {
+        loop {
             iter += 1;
             eprintln!("iter: {}", iter);
             let mut next_beams: BinaryHeap<HorizontalBeam> = BinaryHeap::new();
             for beam in &beams {
                 // suffix n文字を取り出す
-                for suffix_num in 1..=beam.current.len().min(12) {
+                for suffix_num in 2..=beam.current.len().min(11) {
                     let suffix = &beam.current[beam.current.len() - suffix_num..];
                     // suffixと一致するprefixをもつ文字列をdictから取り出す
                     let left = self.bisect_left(suffix);
@@ -89,7 +76,8 @@ impl BeamSolver {
                                 current: beam.current.clone() + &next_str[suffix.len()..],
                                 used: beam.used.clone(),
                             };
-                            next_beam.score = evaluate_horizontal(&self.input, &next_beam);
+                            next_beam.score =
+                                evaluate_horizontal(&self.dict, &self.input, &next_beam);
                             next_beam.used.insert(i);
                             next_beams.push(next_beam);
                             if next_beams.len() >= BEAM_WIDTH {
@@ -102,15 +90,6 @@ impl BeamSolver {
                 }
             }
             let mut next_beams = next_beams.into_iter().collect::<Vec<_>>();
-            next_beams.sort_by(|a, b| {
-                if a.current == b.current {
-                    a.used.len().cmp(&b.used.len())
-                } else {
-                    a.score.cmp(&b.score)
-                }
-            });
-            next_beams.dedup_by(|a, b| a.current == b.current);
-            next_beams.sort_by_key(|beam| beam.score);
             next_beams.truncate(BEAM_WIDTH);
             // トップ3個を見る
             beams = next_beams;
@@ -119,12 +98,6 @@ impl BeamSolver {
                     return beam.clone();
                 }
             }
-        }
-
-        HorizontalBeam {
-            score: 0,
-            current: best_string,
-            used: HashSet::new(),
         }
     }
 }
@@ -149,7 +122,7 @@ impl Ord for HorizontalBeam {
 }
 
 #[inline]
-fn evaluate_horizontal(input: &Input, beam: &HorizontalBeam) -> usize {
+fn evaluate_horizontal(dict: &Vec<String>, input: &Input, beam: &HorizontalBeam) -> usize {
     // current.len()が小さいほど、usedが大きいほど良い
     let mut score = 1000000;
     score += beam.current.len();
@@ -159,26 +132,31 @@ fn evaluate_horizontal(input: &Input, beam: &HorizontalBeam) -> usize {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct VerticalBeam {
+    id: usize,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct NextVerticalBeam {
     score: usize,
     board: Vec<Vec<char>>,
     used: HashSet<usize>,
     used_row: HashSet<usize>,
 }
 
-impl PartialOrd for VerticalBeam {
+impl PartialOrd for NextVerticalBeam {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.score.cmp(&other.score))
     }
 }
 
-impl Ord for VerticalBeam {
+impl Ord for NextVerticalBeam {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.score.cmp(&other.score)
     }
 }
 
 #[inline]
-fn evaluate_vertical(beam: &VerticalBeam) -> usize {
+fn evaluate_vertical(beam: &NextVerticalBeam) -> usize {
     // usedの数で評価
     let mut score = 1000000;
     score -= beam.used.len();
@@ -187,11 +165,13 @@ fn evaluate_vertical(beam: &VerticalBeam) -> usize {
 
 impl Solver for BeamSolver {
     fn solve(&mut self) -> Vec<Vec<char>> {
+        let start = Instant::now();
         let mut rows = vec![vec!['.'; self.input.n]; self.input.n];
         let mut banned = HashSet::new();
         for i in 0..self.input.n {
             let best_beam = self.find_connected_string(&banned);
             rows[i] = best_beam.current.chars().collect();
+            rows[i].truncate(self.input.n);
             for &id in &best_beam.used {
                 banned.insert(id);
             }
@@ -211,19 +191,32 @@ impl Solver for BeamSolver {
         }
         self.dict.retain(|s| !s.is_empty());
 
-        let beam_width = 18;
-        let mut beams: Vec<VerticalBeam> = vec![VerticalBeam {
-            score: 0,
-            board: vec![vec!['.'; self.input.n]; self.input.n],
-            used: HashSet::new(),
-            used_row: HashSet::new(),
-        }];
+        let mut idg = IDGenerator::new();
+
+        let mut beam_width = 60;
+        let first_beam = VerticalBeam { id: idg.generate() };
+        let mut board_map = HashMap::new();
+        board_map.insert(first_beam.id, vec![vec!['.'; self.input.n]; self.input.n]);
+        let mut used_map = HashMap::new();
+        used_map.insert(first_beam.id, HashSet::new());
+        let mut used_row_map = HashMap::new();
+        used_row_map.insert(first_beam.id, HashSet::new());
+        let mut beams: Vec<VerticalBeam> = vec![first_beam];
+        let mut best_id = 0;
         for i in 0..self.input.n {
+            if start.elapsed().as_millis() > 2700 {
+                beam_width = 20;
+            }
             eprintln!("iter: {}", i);
-            let mut next_beams: BinaryHeap<VerticalBeam> = BinaryHeap::new();
-            for beam in beams {
+            let mut next_beams: BinaryHeap<NextVerticalBeam> = BinaryHeap::new();
+            for beam in &beams {
                 for (row_id, row) in rows.iter().enumerate() {
-                    if beam.used_row.contains(&row_id) {
+                    // 1/2で棄却
+                    if rand::random::<f64>() < 0.5 {
+                        continue;
+                    }
+                    let used_row = used_row_map.get(&beam.id).unwrap();
+                    if used_row.contains(&row_id) {
                         continue;
                     }
                     for j in 0..self.input.n {
@@ -232,11 +225,12 @@ impl Solver for BeamSolver {
                         for k in 0..self.input.n {
                             next_row[k] = row[(k + j) % self.input.n];
                         }
-                        let mut next_board = beam.board.clone();
+                        let mut next_board = board_map.get(&beam.id).unwrap().clone();
                         next_board[i] = next_row;
-                        let mut next_used = beam.used.clone();
+                        let used = used_map.get(&beam.id).unwrap();
+                        let mut next_used = used.clone();
                         for col in 0..self.input.n {
-                            for suffix_num in 1..=i.min(12) {
+                            for suffix_num in 2..=i.min(9) {
                                 // i行目以前の同じ列のsuffix_num文字を取り出す
                                 let col_str = (0..suffix_num)
                                     .map(|k| next_board[i - k][col])
@@ -256,9 +250,9 @@ impl Solver for BeamSolver {
                                 }
                             }
                         }
-                        let mut next_used_row = beam.used_row.clone();
+                        let mut next_used_row = used_row.clone();
                         next_used_row.insert(row_id);
-                        let mut next_beam = VerticalBeam {
+                        let mut next_beam = NextVerticalBeam {
                             score: 0,
                             board: next_board,
                             used: next_used,
@@ -273,17 +267,20 @@ impl Solver for BeamSolver {
                 }
             }
             let mut next_beams = next_beams.into_iter().collect::<Vec<_>>();
-            next_beams.sort_by_key(|beam| beam.score);
             next_beams.truncate(beam_width);
-            beams = next_beams;
-            for row in &beams[0].board {
-                eprintln!("{}", row.iter().collect::<String>());
+            beams.clear();
+            for beam in next_beams {
+                let id = idg.generate();
+                board_map.insert(id, beam.board.clone());
+                used_map.insert(id, beam.used.clone());
+                used_row_map.insert(id, beam.used_row.clone());
+                if beams.is_empty() {
+                    best_id = id;
+                }
+                beams.push(VerticalBeam { id });
             }
         }
 
-        // 残った文字列の数を出力
-        eprintln!("left: {:?}", self.dict.len() - beams[0].used.len());
-
-        beams[0].board.clone()
+        board_map.get(&best_id).unwrap().clone()
     }
 }
