@@ -47,7 +47,7 @@ impl<'a> GreedySolver<'a> {
         }
     }
 
-    fn get_dist_map(&self, start: (usize, usize)) -> Vec<Vec<usize>> {
+    fn get_dist_map(&self, start: (usize, usize), board: &Vec<Vec<u8>>) -> Vec<Vec<usize>> {
         let mut dist = vec![vec![usize::MAX; self.d]; self.d];
         let mut queue = VecDeque::new();
         queue.push_back(start);
@@ -62,7 +62,7 @@ impl<'a> GreedySolver<'a> {
                 }
                 let nx = nx as usize;
                 let ny = ny as usize;
-                if self.board[nx][ny] == BLANK && dist[nx][ny] == usize::MAX {
+                if board[nx][ny] == BLANK && dist[nx][ny] == usize::MAX {
                     dist[nx][ny] = dist[x][y] + 1;
                     queue.push_back((nx, ny));
                 }
@@ -70,6 +70,33 @@ impl<'a> GreedySolver<'a> {
         }
 
         dist
+    }
+
+    fn get_ideal_board(&self) -> Vec<Vec<u8>> {
+        let mut ideal_board = vec![vec![BLANK; self.d]; self.d];
+        for (x, y) in self.r.iter() {
+            ideal_board[*x][*y] = OBJECT;
+        }
+        let mut counter = 0;
+        let start = (0, self.d / 2);
+        let dist_map = self.get_dist_map(start, &self.board);
+        let mut dist_vec = vec![];
+        for x in 0..self.d {
+            for y in 0..self.d {
+                if self.board[x][y] == BLANK {
+                    dist_vec.push((dist_map[x][y], (x, y)));
+                }
+            }
+        }
+        dist_vec.sort();
+        for (_, (x, y)) in dist_vec {
+            if (x, y) == start {
+                continue;
+            }
+            ideal_board[x][y] = counter;
+            counter += 1;
+        }
+        ideal_board
     }
 
     fn get_reachable_items(&self, start: (usize, usize)) -> HashMap<(usize, usize), u8> {
@@ -103,20 +130,39 @@ impl<'a> GreedySolver<'a> {
         reachable_items
     }
 
-    fn debug_board(&self) {
+    fn debug_board(&self, board: &Vec<Vec<u8>>) {
         for x in 0..self.d {
             for y in 0..self.d {
-                if self.board[x][y] == OBJECT {
+                if board[x][y] == OBJECT {
                     eprint!("## ");
-                } else if self.board[x][y] == BLANK {
+                } else if board[x][y] == BLANK {
                     eprint!("   ");
                 } else {
-                    eprint!("{:2} ", self.board[x][y]);
+                    eprint!("{:2} ", board[x][y]);
                 }
             }
             eprintln!();
         }
     }
+
+    // ボードに穴がないか
+    fn is_board_has_hole(&self, board: &Vec<Vec<u8>>) -> bool {
+        let start = (0, self.d / 2);
+        // boardがBLANKなのにdist_mapがusize::MAXなら穴がある
+        let dist_map = self.get_dist_map(start, board);
+        for x in 0..self.d {
+            for y in 0..self.d {
+                if board[x][y] == BLANK && dist_map[x][y] == usize::MAX {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+fn manhattan_distance(a: (usize, usize), b: (usize, usize)) -> usize {
+    (a.0 as i32 - b.0 as i32).abs() as usize + (a.1 as i32 - b.1 as i32).abs() as usize
 }
 
 impl<'a> Solver for GreedySolver<'a> {
@@ -124,28 +170,47 @@ impl<'a> Solver for GreedySolver<'a> {
         let input_pos: (usize, usize) = (0, self.d / 2);
 
         let container_num = self.d.pow(2) - 2 - self.n + 1;
+        let ideal_board = self.get_ideal_board();
+        let ideal_map = ideal_board
+            .iter()
+            .enumerate()
+            .flat_map(|(x, row)| row.iter().enumerate().map(move |(y, &item)| (item, (x, y))))
+            .collect::<HashMap<_, _>>();
+        // self.debug_board(&ideal_board);
         for _ in 0..container_num {
             input! {
                 from &mut self.source,
                 d: u8,
             }
-            let dist_map = self.get_dist_map(input_pos);
-            // board==BLANKで一番遠い場所
-            let mut max_dist = 0;
-            let mut max_pos = (0, 0);
+            // 行ける場所の中で一番マンハッタン距離が小さいもの
+            let ideal_pos = ideal_map[&d];
+            let mut min_dist = usize::MAX;
+            let mut min_pos = (0, 0);
+            let dist_map = self.get_dist_map(input_pos, &self.board);
             for x in 0..self.d {
                 for y in 0..self.d {
-                    if self.board[x][y] == BLANK && dist_map[x][y] > max_dist {
-                        max_dist = dist_map[x][y];
-                        max_pos = (x, y);
+                    if (x, y) == input_pos {
+                        continue;
+                    }
+                    if dist_map[x][y] != usize::MAX {
+                        let mut board_clone = self.board.clone();
+                        board_clone[x][y] = d;
+                        if self.is_board_has_hole(&board_clone) {
+                            continue;
+                        }
+                        let dist = manhattan_distance((x, y), ideal_pos);
+                        if dist < min_dist {
+                            min_dist = dist;
+                            min_pos = (x, y);
+                        }
                     }
                 }
             }
-            self.board[max_pos.0][max_pos.1] = d;
-            println!("{} {}", max_pos.0, max_pos.1);
+            self.board[min_pos.0][min_pos.1] = d;
+            println!("{} {}", min_pos.0, min_pos.1);
         }
 
-        self.debug_board();
+        self.debug_board(&self.board);
 
         for _ in 0..container_num {
             let reachable_items = self.get_reachable_items(input_pos);
