@@ -1,12 +1,13 @@
-use proconio::input;
-use solver::game::Game;
+use solver::{
+    io::Input,
+    solver::{greedy::GreedySolver, Solver},
+};
 
 extern crate solver;
 
 fn main() {
-    input! {
-        n: usize,
-    }
-
-    let game = Game::new(n);
+    let input = Input::read();
+    let mut solver = GreedySolver::new(input);
+    let output = solver.solve();
+    output.write();
 }
