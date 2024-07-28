@@ -64,21 +64,33 @@ double rng_double() {
     return rng() / (ULONG_MAX + 1.0);
 }
 
-vector<vector<ll>> generate_combinations(int n, int r) {
-    vector<vector<ll>> res;
-    function<void(vector<ll>, int)> dfs = [&](vector<ll> cur, int depth) {
-        if (depth == r) {
-            res.push_back(cur);
-            return;
-        }
-        rep(i, n) {
-            vector<ll> next = cur;
-            next.push_back(i);
-            dfs(next, depth + 1);
-        }
+template <typename container_type>
+vector<vector<typename container_type::value_type>>
+combWithReplace(container_type const& choices, size_t n) {
+    using value_type = typename container_type::value_type;
+    using selected_t = vector<value_type>;
+    using itor_t = typename container_type::const_iterator;
+    struct impl {                        // lambda で再帰は面倒なので クラスにする
+        vector<vector<value_type>>& r_;  // コピーを避けるために参照を持つ
+        impl(vector<vector<value_type>>& r) : r_(r) {}
+        void append(selected_t& s, itor_t b, itor_t e, size_t n) {
+            if (n == 0) {
+                r_.push_back(s);
+            } else {
+                for (auto it = b; it != e; ++it) {
+                    s.push_back(*it);
+                    append(s, it, e, n - 1);
+                    s.pop_back();
+                }
+            }
+        };
     };
-    dfs({}, 0);
-    return res;
+    vector<vector<value_type>> r;
+    impl o{r};
+    selected_t e;
+    e.reserve(n);
+    o.append(e, cbegin(choices), cend(choices), n);
+    return r;
 }
 
 int main() {
@@ -104,6 +116,9 @@ int main() {
         board[i][j] = in.a[i][j];
     }
 
+    vector<ll> stamps_permutation(in.m);
+    iota(stamps_permutation.begin(), stamps_permutation.end(), 0);
+
     rep(i, 6) {
         rep(j, 6) {
             ll max_score = board[i][j].val();
@@ -128,7 +143,12 @@ int main() {
     rep(i, 6) {
         ll max_score = board[i][6].val() + board[i][7].val() + board[i][8].val();
         vector<ll> max_stid_ops;
-        vector<vector<ll>> max_stid_candidates = generate_combinations(in.m, 3);
+        vector<vector<ll>> max_stid_candidates;
+        rep1(i, 3) {
+            for (auto stid_ops : combWithReplace(stamps_permutation, i)) {
+                max_stid_candidates.push_back(stid_ops);
+            }
+        }
         for (auto stid_ops : max_stid_candidates) {
             vector<mint> board_row = {board[i][6], board[i][7], board[i][8]};
             for (auto stid : stid_ops) {
@@ -153,7 +173,12 @@ int main() {
     rep(j, 6) {
         ll max_score = board[6][j].val() + board[7][j].val() + board[8][j].val();
         vector<ll> max_stid_ops;
-        vector<vector<ll>> max_stid_candidates = generate_combinations(in.m, 3);
+        vector<vector<ll>> max_stid_candidates;
+        rep1(i, 3) {
+            for (auto stid_ops : combWithReplace(stamps_permutation, i)) {
+                max_stid_candidates.push_back(stid_ops);
+            }
+        }
         for (auto stid_ops : max_stid_candidates) {
             vector<mint> board_col = {board[6][j], board[7][j], board[8][j]};
             for (auto stid : stid_ops) {
@@ -180,7 +205,12 @@ int main() {
         max_score += board[6 + i][6 + j].val();
     }
     vector<ll> max_stid_ops;
-    vector<vector<ll>> max_stid_candidates = generate_combinations(in.m, 5);
+    vector<vector<ll>> max_stid_candidates;
+    rep1(i, 8) {
+        for (auto stid_ops : combWithReplace(stamps_permutation, i)) {
+            max_stid_candidates.push_back(stid_ops);
+        }
+    }
     for (auto stid_ops : max_stid_candidates) {
         vector<vector<mint>> board_sub = {{board[6][6], board[6][7], board[6][8]},
                                           {board[7][6], board[7][7], board[7][8]},
