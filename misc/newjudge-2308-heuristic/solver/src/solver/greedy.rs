@@ -55,14 +55,14 @@ impl Solver for GreedySolver {
             let mut best = 0;
             let mut best_score = -1;
             for i in 0..26 {
-                let id = i;
                 let mut new_out = out.clone();
-                new_out.push(id);
-                let (mut score, _, _) = compute_score(&self.input, &new_out);
-                score += (t + 1 - last[id]).pow(2) as i64 * 10;
+                new_out.push(i);
+                let s = self.input.s[t][i] as i64;
+                let score =
+                    s + self.input.c[i] as i64 * ((t + 1 - last[i]) as f64).powf(1.75) as i64;
                 if score > best_score {
                     best_score = score;
-                    best = id;
+                    best = i;
                 }
             }
 
