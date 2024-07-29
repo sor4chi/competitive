@@ -1,14 +1,15 @@
-use crate::io::{Input, Output};
+use crate::io::{Input, Output, IO};
 
 use super::Solver;
 
 pub struct GreedySolver {
+    io: IO,
     input: Input,
 }
 
 impl GreedySolver {
-    pub fn new(input: Input) -> Self {
-        GreedySolver { input }
+    pub fn new(io: IO, input: Input) -> Self {
+        GreedySolver { io, input }
     }
 }
 

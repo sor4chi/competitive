@@ -1,27 +1,28 @@
-use std::io::{stdin, BufReader};
-
-use proconio::{input, source::line::LineSource};
+use proconio::input;
 
 pub struct Input {
     pub n: usize,
 }
 
-impl Input {
-    pub fn read() -> Self {
-        let stdin = stdin();
-        let mut source = LineSource::new(BufReader::new(stdin.lock()));
+#[derive(Default)]
+pub struct IO {}
 
+impl IO {
+    pub fn read(&mut self) -> Input {
         input! {
-            from &mut source,
             n: usize,
         }
 
-        Self { n }
+        Input { n }
     }
 }
 
-pub struct Output {}
+pub struct Output {
+    n: usize,
+}
 
 impl Output {
-    pub fn write(&self) {}
+    pub fn write(&self) {
+        println!("{}", self.n);
+    }
 }
