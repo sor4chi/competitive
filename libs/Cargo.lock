@@ -3,9 +3,16 @@
 version = 3
 
 [[package]]
-name = "on-tree-beam-search"
+name = "fixedbitset"
+version = "0.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
+
+[[package]]
+name = "libs"
 version = "0.1.0"
 dependencies = [
+ "fixedbitset",
  "rustc-hash",
 ]
 
