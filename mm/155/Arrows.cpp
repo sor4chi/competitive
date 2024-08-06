@@ -96,6 +96,53 @@ pair<vector<pair<int, int>>, int> closest_return_greedy(const vector<vector<Cell
     return {moves, score};
 }
 
+struct DFSNode {
+    int r;
+    int c;
+    int i;
+    int score;
+    vector<pair<int, int>> moves;
+    vector<vector<bool>> used;
+};
+
+pair<vector<pair<int, int>>, int> dfs_greedy(const vector<vector<Cell>>& grid, int r, int c, int tl) {
+    int n = grid.size();
+    vector<vector<bool>> used(n, vector<bool>(n));
+    vector<pair<int, int>> best_moves;
+    int best_score = 0;
+    stack<DFSNode> st;
+    st.push({r, c, 1, 0, {}, used});
+    chrono::system_clock::time_point start = chrono::system_clock::now();
+
+    while (!st.empty() && chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start).count() < tl) {
+        auto [r, c, i, score, moves, used] = st.top();
+        st.pop();
+
+        if (score > best_score) {
+            best_score = score;
+            best_moves = moves;
+        }
+
+        auto [arrow, m] = grid[r][c];
+        auto [dr, dc] = dirs[arrow];
+        int r_ = r + dr;
+        int c_ = c + dc;
+
+        // arrowの方向で盤面上の未探索のセルを全て探索
+        while (r_ >= 0 && r_ < n && c_ >= 0 && c_ < n && !used[r_][c_]) {
+            auto used_ = used;
+            used_[r_][c_] = true;
+            auto moves_ = moves;
+            moves_.push_back({r_, c_});
+            st.push({r_, c_, i + 1, score + m * i, moves_, used_});
+            r_ += dr;
+            c_ += dc;
+        }
+    }
+
+    return {best_moves, best_score};
+}
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -116,14 +163,20 @@ int main() {
     vector<pair<int, int>> best_moves;
     int best_score = 0;
 
-    rep(r, n) {
-        rep(c, n) {
-            auto [moves, score] = closest_return_greedy(grid, r, c);
-            eprintln(r, c, score);
-            if (score > best_score) {
-                best_score = score;
-                best_moves = moves;
-            }
+    int trial = n * n;
+    int tl = 9500;
+    vector<int> starts(n * n);
+    iota(starts.begin(), starts.end(), 0);
+    mt19937 mt(chrono::steady_clock::now().time_since_epoch().count());
+    shuffle(starts.begin(), starts.end(), mt);
+
+    rep(i, trial) {
+        int idx = starts[i];
+        auto [moves, score] = dfs_greedy(grid, idx / n, idx % n, tl / trial);
+        eprintln(idx / n, idx % n, score);
+        if (score > best_score) {
+            best_moves = moves;
+            best_score = score;
         }
     }
 
