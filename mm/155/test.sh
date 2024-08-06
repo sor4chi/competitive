@@ -8,4 +8,4 @@ echo "Compiling Arrows.cpp..."
 g++ Arrows.cpp -o a.out
 
 echo "Testing seed $seed..."
-java -jar tester.jar -exec "./a.out" -seed $seed -delay 100
+java -jar tester.jar -exec "./a.out" -seed $seed -delay 10

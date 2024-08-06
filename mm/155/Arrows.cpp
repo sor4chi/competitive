@@ -105,13 +105,20 @@ struct DFSNode {
     vector<vector<bool>> used;
 };
 
+struct NextDFSNode {
+    DFSNode node;
+    int point;
+    int far;
+};
+
 pair<vector<pair<int, int>>, int> dfs_greedy(const vector<vector<Cell>>& grid, int r, int c, int tl) {
     int n = grid.size();
     vector<vector<bool>> used(n, vector<bool>(n));
+    used[r][c] = true;
     vector<pair<int, int>> best_moves;
     int best_score = 0;
     stack<DFSNode> st;
-    st.push({r, c, 1, 0, {}, used});
+    st.push({r, c, 1, grid[r][c].mult, {{r, c}}, used});
     chrono::system_clock::time_point start = chrono::system_clock::now();
 
     while (!st.empty() && chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start).count() < tl) {
@@ -125,18 +132,40 @@ pair<vector<pair<int, int>>, int> dfs_greedy(const vector<vector<Cell>>& grid, i
 
         auto [arrow, m] = grid[r][c];
         auto [dr, dc] = dirs[arrow];
-        int r_ = r + dr;
-        int c_ = c + dc;
 
-        // arrowの方向で盤面上の未探索のセルを全て探索
-        while (r_ >= 0 && r_ < n && c_ >= 0 && c_ < n && !used[r_][c_]) {
+        vector<NextDFSNode> nexts;
+        int r_ = r;
+        int c_ = c;
+        int far = 0;
+        while (true) {
+            r_ += dr;
+            c_ += dc;
+            if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
+                break;
+            }
+            if (used[r_][c_]) {
+                continue;
+            }
             auto used_ = used;
             used_[r_][c_] = true;
             auto moves_ = moves;
             moves_.push_back({r_, c_});
-            st.push({r_, c_, i + 1, score + m * i, moves_, used_});
-            r_ += dr;
-            c_ += dc;
+            DFSNode next = {r_, c_, i + 1, score + m * i, moves_, used_};
+            nexts.push_back({next, m, far++});
+        }
+
+        sort(nexts.begin(), nexts.end(), [](const NextDFSNode& a, const NextDFSNode& b) {
+            // スコアが小さい(pointが低い方)から選ぶ
+            // (後に高いマスを踏んだ方がおいしい)
+            if (a.point != b.point) {
+                return a.point < b.point;
+            }
+            // 遠いところ(farが大きい方)から選ぶ
+            return a.far > b.far;
+        });
+
+        for (auto& next : nexts) {
+            st.push(next.node);
         }
     }
 
@@ -163,17 +192,40 @@ int main() {
     vector<pair<int, int>> best_moves;
     int best_score = 0;
 
-    int trial = n * n;
+    int trial = 10;
     int tl = 9500;
-    vector<int> starts(n * n);
-    iota(starts.begin(), starts.end(), 0);
-    mt19937 mt(chrono::steady_clock::now().time_since_epoch().count());
-    shuffle(starts.begin(), starts.end(), mt);
+
+    struct Cand {
+        int mult;
+        int dist_from_center;
+        pair<int, int> pos;
+    };
+
+    vector<Cand> start_candidates;
+    rep(r, n) {
+        rep(c, n) {
+            int dist = abs(r - n / 2) + abs(c - n / 2);
+            Cand cand = {grid[r][c].mult, dist, {r, c}};
+            start_candidates.push_back(cand);
+        }
+    }
+
+    // 中心に近く、mが低いマスからスタートする
+    sort(start_candidates.begin(), start_candidates.end(), [](const auto& a, const auto& b) {
+        // multが低い方が良い
+        if (a.mult != b.mult) {
+            return a.mult < b.mult;
+        }
+        // 中心に近い方が良い
+        return a.dist_from_center < b.dist_from_center;
+    });
+
+    assert(start_candidates.size() >= trial);
 
     rep(i, trial) {
-        int idx = starts[i];
-        auto [moves, score] = dfs_greedy(grid, idx / n, idx % n, tl / trial);
-        eprintln(idx / n, idx % n, score);
+        auto [r, c] = start_candidates[i].pos;
+        auto [moves, score] = dfs_greedy(grid, r, c, tl / trial);
+        eprintln("start:", r, c, "score:", score);
         if (score > best_score) {
             best_moves = moves;
             best_score = score;
