@@ -64,6 +64,38 @@ struct Cell {
     int mult;
 };
 
+pair<vector<pair<int, int>>, int> closest_return_greedy(const vector<vector<Cell>>& grid, int r, int c) {
+    int n = grid.size();
+    vector<vector<bool>> used(n, vector<bool>(n));
+    vector<pair<int, int>> moves;
+    int score = 0;
+    int i = 1;
+    int r_ = r;
+    int c_ = c;
+    Arrow dir = Top;
+    while (true) {
+        if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
+            break;
+        }
+        if (used[r_][c_]) {
+            auto [dr, dc] = dirs[dir];
+            r_ += dr;
+            c_ += dc;
+            continue;
+        }
+
+        used[r_][c_] = true;
+        moves.push_back({r_, c_});
+        score += grid[r_][c_].mult * i;
+
+        auto [arrow, m] = grid[r_][c_];
+        dir = arrow;
+        i++;
+    }
+
+    return {moves, score};
+}
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -86,33 +118,7 @@ int main() {
 
     rep(r, n) {
         rep(c, n) {
-            vector<vector<bool>> used(n, vector<bool>(n));
-            vector<pair<int, int>> moves;
-            int score = 0;
-            int i = 1;
-            int r_ = r;
-            int c_ = c;
-            Arrow dir = Top;
-            while (true) {
-                if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
-                    break;
-                }
-                if (used[r_][c_]) {
-                    auto [dr, dc] = dirs[dir];
-                    r_ += dr;
-                    c_ += dc;
-                    continue;
-                }
-
-                used[r_][c_] = true;
-                moves.push_back({r_, c_});
-                score += grid[r_][c_].mult * i;
-
-                auto [arrow, m] = grid[r_][c_];
-                dir = arrow;
-                i++;
-            }
-
+            auto [moves, score] = closest_return_greedy(grid, r, c);
             eprintln(r, c, score);
             if (score > best_score) {
                 best_score = score;
