@@ -64,7 +64,11 @@ struct Cell {
     int mult;
 };
 
-pair<vector<pair<int, int>>, int> closest_return_greedy(const vector<vector<Cell>>& grid, int r, int c) {
+int n;
+map<int, int> mults;
+vector<vector<Cell>> grid;
+
+pair<vector<pair<int, int>>, int> closest_return_greedy(int r, int c) {
     int n = grid.size();
     vector<vector<bool>> used(n, vector<bool>(n));
     vector<pair<int, int>> moves;
@@ -102,7 +106,7 @@ struct DFSNode {
     int i;
     int score;
     vector<pair<int, int>> moves;
-    vector<vector<bool>> used;
+    bitset<900> used;
 };
 
 struct NextDFSNode {
@@ -111,10 +115,10 @@ struct NextDFSNode {
     int far;
 };
 
-pair<vector<pair<int, int>>, int> dfs_greedy(const vector<vector<Cell>>& grid, int r, int c, int tl) {
+pair<vector<pair<int, int>>, int> dfs_greedy(int r, int c, int tl) {
     int n = grid.size();
-    vector<vector<bool>> used(n, vector<bool>(n));
-    used[r][c] = true;
+    bitset<900> used;
+    used[r * n + c] = true;
     vector<pair<int, int>> best_moves;
     int best_score = 0;
     stack<DFSNode> st;
@@ -143,24 +147,30 @@ pair<vector<pair<int, int>>, int> dfs_greedy(const vector<vector<Cell>>& grid, i
             if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
                 break;
             }
-            if (used[r_][c_]) {
+            if (used[r_ * n + c_]) {
                 continue;
             }
             auto used_ = used;
-            used_[r_][c_] = true;
+            used_[r_ * n + c_] = true;
             auto moves_ = moves;
             moves_.push_back({r_, c_});
             DFSNode next = {r_, c_, i + 1, score + m * i, moves_, used_};
-            nexts.push_back({next, m, far++});
+            nexts.push_back({next, grid[r_][c_].mult, far++});
         }
 
-        sort(nexts.begin(), nexts.end(), [](const NextDFSNode& a, const NextDFSNode& b) {
+        int cap = mults[1] * 0.75 + mults[2] * 0.5 + mults[3] * 0.125;
+        bool should_point_maximize = i >= cap;
+
+        sort(nexts.begin(), nexts.end(), [should_point_maximize](const NextDFSNode& a, const NextDFSNode& b) {
             // スコアが小さい(pointが低い方)から選ぶ
             // (後に高いマスを踏んだ方がおいしい)
             if (a.point != b.point) {
-                return a.point < b.point;
+                if (should_point_maximize) {
+                    return a.point < b.point;
+                }
+                return a.point > b.point;
             }
-            // 遠いところ(farが大きい方)から選ぶ
+            // 近いマスから選ぶ
             return a.far > b.far;
         });
 
@@ -178,14 +188,18 @@ int main() {
     cout.tie(nullptr);
     cout << fixed << setprecision(15);
 
-    int n;
     input(n);
-    vector<vector<Cell>> grid(n, vector<Cell>(n));
+    grid = vector<vector<Cell>>(n, vector<Cell>(n));
+    mults[1] = 0;
+    mults[2] = 0;
+    mults[3] = 0;
+    mults[5] = 0;
     rep(r, n) {
         rep(c, n) {
             int a, m;
             input(a, m);
             grid[r][c] = {Arrow(a), m};
+            mults[m]++;
         }
     }
 
@@ -234,7 +248,7 @@ int main() {
 
     rep(i, trial) {
         auto [r, c] = start_candidates[i].pos;
-        auto [moves, score] = dfs_greedy(grid, r, c, tl / trial);
+        auto [moves, score] = dfs_greedy(r, c, tl / trial);
         eprintln("start:", r, c, "score:", score);
         if (score > best_score) {
             best_moves = moves;
