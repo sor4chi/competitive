@@ -192,7 +192,17 @@ int main() {
     vector<pair<int, int>> best_moves;
     int best_score = 0;
 
-    int trial = 10;
+    int trial = -1;
+    // N=8の時は100マス, N=30の時は10となるように滑らかに変化させる
+    int N_MIN = 8;
+    int N_MAX = 30;
+    int TRIAL_MIN = 10;
+    int TRIAL_MAX = 100;
+    int x = n - N_MIN;
+    trial = x * (TRIAL_MIN - TRIAL_MAX) / (N_MAX - N_MIN) + TRIAL_MAX;
+    eprintln("trial:", trial);
+    trial = min(trial, n * n);
+    eprintln("trial(capped):", trial);
     int tl = 9500;
 
     struct Cand {
