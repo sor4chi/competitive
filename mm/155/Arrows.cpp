@@ -1,3 +1,4 @@
+// #pragma GCC target "sse4.2"
 #include <bits/stdc++.h>
 
 using namespace std;
@@ -105,7 +106,7 @@ struct DFSNode {
     int c;
     int i;
     int score;
-    vector<pair<int, int>> moves;
+    short int moves[900];
     bitset<900> used;
 };
 
@@ -119,10 +120,16 @@ pair<vector<pair<int, int>>, int> dfs_greedy(int r, int c, int tl) {
     int n = grid.size();
     bitset<900> used;
     used[r * n + c] = true;
-    vector<pair<int, int>> best_moves;
+    short int best_moves[900];
     int best_score = 0;
     stack<DFSNode> st;
-    st.push({r, c, 1, grid[r][c].mult, {{r, c}}, used});
+    short int initial_moves[900];
+    rep(i, 900) initial_moves[i] = -1;
+    initial_moves[0] = r * n + c;
+    DFSNode initial = {r, c, 1, grid[r][c].mult};
+    memcpy(initial.moves, initial_moves, sizeof(initial_moves));
+    initial.used = used;
+    st.push(initial);
     chrono::system_clock::time_point start = chrono::system_clock::now();
 
     while (!st.empty() && chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start).count() < tl) {
@@ -131,7 +138,7 @@ pair<vector<pair<int, int>>, int> dfs_greedy(int r, int c, int tl) {
 
         if (score > best_score) {
             best_score = score;
-            best_moves = moves;
+            memcpy(best_moves, moves, sizeof(moves));
         }
 
         auto [arrow, m] = grid[r][c];
@@ -150,11 +157,14 @@ pair<vector<pair<int, int>>, int> dfs_greedy(int r, int c, int tl) {
             if (used[r_ * n + c_]) {
                 continue;
             }
-            auto used_ = used;
+            bitset<900> used_ = used;
             used_[r_ * n + c_] = true;
-            auto moves_ = moves;
-            moves_.push_back({r_, c_});
-            DFSNode next = {r_, c_, i + 1, score + m * i, moves_, used_};
+            short int moves_[900];
+            memcpy(moves_, moves, sizeof(moves));
+            moves_[i] = r_ * n + c_;
+            DFSNode next = {r_, c_, i + 1, score + grid[r_][c_].mult * (i + 1)};
+            memcpy(next.moves, moves_, sizeof(moves_));
+            next.used = used_;
             nexts.push_back({next, grid[r_][c_].mult, far++});
         }
 
@@ -179,7 +189,17 @@ pair<vector<pair<int, int>>, int> dfs_greedy(int r, int c, int tl) {
         }
     }
 
-    return {best_moves, best_score};
+    vector<pair<int, int>> best_moves_v;
+    rep(i, n * n) {
+        if (best_moves[i] == -1) {
+            break;
+        }
+        int r = best_moves[i] / n;
+        int c = best_moves[i] % n;
+        best_moves_v.push_back({r, c});
+    }
+
+    return {best_moves_v, best_score};
 }
 
 int main() {
@@ -207,10 +227,10 @@ int main() {
     int best_score = 0;
 
     int trial = -1;
-    // N=8の時は100マス, N=30の時は10となるように滑らかに変化させる
+    // N=8の時は100マス, N=30の時は30となるように滑らかに変化させる
     int N_MIN = 8;
     int N_MAX = 30;
-    int TRIAL_MIN = 10;
+    int TRIAL_MIN = 20;
     int TRIAL_MAX = 100;
     int x = n - N_MIN;
     trial = x * (TRIAL_MIN - TRIAL_MAX) / (N_MAX - N_MIN) + TRIAL_MAX;
@@ -260,6 +280,8 @@ int main() {
     for (auto [r, c] : best_moves) {
         println(r, c);
     }
+
+    // println("Score =", best_score);
 
     return 0;
 }
