@@ -94,7 +94,7 @@ struct Cell {
 int n;
 map<int, int> mults;
 vector<vector<Cell>> grid;
-int all_tl = 9900;
+int all_tl = 9800;
 
 struct DFSNode {
     int r;
@@ -239,7 +239,7 @@ enum Neighbor {
 map<Neighbor, int> neighbor_weights = {
     {Break, 1},
     {ExpandStart, 1},
-    // {ExpandEnd, 1},
+    {ExpandEnd, 1},
     // {BreakStart, 1},
     // {BreakEnd, 1},
 };
