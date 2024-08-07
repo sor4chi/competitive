@@ -25,19 +25,7 @@ const SEED_END = 100;
 console.log(`Testing seeds from ${SEED_START} to ${SEED_END}...`);
 for (let seed = SEED_START; seed <= SEED_END; seed++) {
   console.log(`Testing seed ${seed}...`);
-  const start = Date.now();
-  const res = execSync(`./a.out < ./in/${seed}.txt`);
-  const end = Date.now();
-  const taken = end - start;
-  console.log(
-    // takenが10sを超える場合は赤字で表示
-    // takenが9.75sを超える場合は黄色で表示
-    `Time: ${(() => {
-      if (taken >= 10000) return c.red;
-      if (taken >= 9750) return c.yellow;
-      return c.green;
-    })()(`${taken}ms`)}`
-  );
+  const res = execSync(`time ./a.out < ./in/${seed}.txt`);
   const SCORE_RE = /Score = (\d+)/;
   const match = SCORE_RE.exec(res.toString());
   if (match) {
