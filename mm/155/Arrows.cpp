@@ -228,6 +228,35 @@ bool validate(const vector<pair<int, int>>& moves) {
     return true;
 }
 
+enum Neighbor {
+    Break,
+    ExpandStart,
+    ExpandEnd,
+    BreakStart,
+    BreakEnd,
+};
+
+map<Neighbor, int> neighbor_weights = {
+    {Break, 1},
+    {ExpandStart, 1},
+    // {ExpandEnd, 1},
+    // {BreakStart, 1},
+    // {BreakEnd, 1},
+};
+
+vector<Neighbor> choice_neighbors;
+
+Neighbor neighbor() {
+    if (choice_neighbors.empty()) {
+        for (auto [neighbor, weight] : neighbor_weights) {
+            rep(i, weight) {
+                choice_neighbors.push_back(neighbor);
+            }
+        }
+    }
+    return choice_neighbors[xorshf96() % choice_neighbors.size()];
+}
+
 // 山登り法で最適解を探す
 pair<vector<pair<int, int>>, int> hill_climbing(int tl) {
     chrono::system_clock::time_point start = chrono::system_clock::now();
@@ -247,89 +276,178 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl) {
     double end_temp = 1e-3;
     int updates = 0;
     int iters = 0;
+    mt19937 mt(xorshf96());
     while (chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start).count() < tl) {
         iters++;
-        // 一部をランダムに破壊
-        int moves_size = best_moves.size();
-        int l = xorshf96() % (moves_size - 1) + 1;
-        int width = xorshf96() % n + 1;
-        int r = min(moves_size - 1, l + width);
-        auto current_used = used;
-        pair<int, int> start_cell = best_moves[l - 1];
-        pair<int, int> end_cell = best_moves[r];
+        vector<pair<int, int>> new_moves;
+        bitset<900> new_used;
+        Neighbor nb = neighbor();
+        if (nb == Break) {
+            // 一部をランダムに破壊
+            int moves_size = best_moves.size();
+            int l = xorshf96() % (moves_size - 1) + 1;
+            int width = xorshf96() % n + 1;
+            int r = min(moves_size - 1, l + width);
+            auto current_used = used;
+            pair<int, int> start_cell = best_moves[l - 1];
+            pair<int, int> end_cell = best_moves[r];
 
-        for (int i = l; i <= r; i++) {
-            auto [r_, c_] = best_moves[i];
-            current_used[r_ * n + c_] = false;
+            for (int i = l; i <= r; i++) {
+                auto [r_, c_] = best_moves[i];
+                current_used[r_ * n + c_] = false;
+            }
+
+            // startとendの間のマスをdfsで探索し、今よりもさらに長い操作列を求める
+            vector<pair<int, int>> founded_moves;
+            struct HCDFSNode {
+                int r;
+                int c;
+                vector<pair<int, int>> moves;
+                bitset<900> used;
+            };
+            stack<HCDFSNode> st;
+            st.push({start_cell.first, start_cell.second, {start_cell}, current_used});
+            // 今の最適解よりも長い操作列が見つかったら、それを最適解とする
+            chrono::system_clock::time_point start_dfs = chrono::system_clock::now();
+            int tl_dfs = 10;
+            while (!st.empty() && chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start_dfs).count() < tl_dfs) {
+                auto [cur_r, cur_c, cur_moves, cur_used] = st.top();
+                st.pop();
+                if (cur_r == end_cell.first && cur_c == end_cell.second) {
+                    founded_moves = cur_moves;
+                    new_used = cur_used;
+                    break;
+                }
+                auto [arrow, m] = grid[cur_r][cur_c];
+                auto [dr, dc] = dirs[arrow];
+                int r_ = cur_r;
+                int c_ = cur_c;
+                vector<HCDFSNode> nexts;
+                while (true) {
+                    r_ += dr;
+                    c_ += dc;
+                    if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
+                        break;
+                    }
+                    if (cur_used[r_ * n + c_]) {
+                        continue;
+                    }
+                    auto used_ = cur_used;
+                    used_[r_ * n + c_] = true;
+                    auto moves_ = cur_moves;
+                    moves_.push_back({r_, c_});
+                    nexts.push_back({r_, c_, moves_, used_});
+                }
+
+                shuffle(nexts.begin(), nexts.end(), mt);
+
+                for (auto& next : nexts) {
+                    st.push(next);
+                }
+            }
+
+            if (founded_moves.empty()) {
+                continue;
+            }
+
+            // 最も長い操作列を求めたので、それが既存のパスより長い場合は更新する
+
+            for (int i = 0; i < l - 1; i++) {
+                new_moves.push_back(best_moves[i]);
+            }
+            for (int i = 0; i < founded_moves.size(); i++) {
+                new_moves.push_back(founded_moves[i]);
+            }
+            for (int i = r + 1; i < best_moves.size(); i++) {
+                new_moves.push_back(best_moves[i]);
+            }
         }
 
-        // startとendの間のマスをdfsで探索し、今よりもさらに長い操作列を求める
-        vector<pair<int, int>> founded_moves;
-        bitset<900> founded_used;
-        struct HCDFSNode {
-            int r;
-            int c;
-            vector<pair<int, int>> moves;
-            bitset<900> used;
-        };
-        stack<HCDFSNode> st;
-        st.push({start_cell.first, start_cell.second, {start_cell}, current_used});
-        // 今の最適解よりも長い操作列が見つかったら、それを最適解とする
-        chrono::system_clock::time_point start_dfs = chrono::system_clock::now();
-        int tl_dfs = 10;
-        mt19937 mt(xorshf96());
-        while (!st.empty() && chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start_dfs).count() < tl_dfs) {
-            auto [cur_r, cur_c, cur_moves, cur_used] = st.top();
-            st.pop();
-            if (cur_r == end_cell.first && cur_c == end_cell.second) {
-                founded_moves = cur_moves;
-                founded_used = cur_used;
-                break;
+        if (nb == ExpandStart) {
+            // スタート地点からrev方面に一マス拡張
+            pair<int, int> start_cell = best_moves[0];
+            auto [r, c] = start_cell;
+            vector<pair<int, int>> candidates;
+            for (auto [arrow, dir] : dirs) {
+                int r_ = r;
+                int c_ = c;
+                auto [dr, dc] = dir;
+                while (true) {
+                    r_ += dr;
+                    c_ += dc;
+                    if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
+                        break;
+                    }
+                    if (used[r_ * n + c_]) {
+                        continue;
+                    }
+                    if (revs[arrow] == grid[r_][c_].arrow) {
+                        candidates.push_back({r_, c_});
+                    }
+                }
             }
-            auto [arrow, m] = grid[cur_r][cur_c];
+
+            if (candidates.empty()) {
+                continue;
+            }
+
+            pair<int, int> new_start = candidates[xorshf96() % candidates.size()];
+            new_moves.push_back(new_start);
+            new_moves.insert(new_moves.end(), best_moves.begin(), best_moves.end());
+            new_used = used;
+            new_used[new_start.first * n + new_start.second] = true;
+        }
+
+        if (nb == ExpandEnd) {
+            // ゴール地点からrev方面に一マス拡張
+            pair<int, int> end_cell = best_moves.back();
+            auto [r, c] = end_cell;
+            vector<pair<int, int>> candidates;
+            int r_ = r;
+            int c_ = c;
+            auto [arrow, m] = grid[r][c];
             auto [dr, dc] = dirs[arrow];
-            int r_ = cur_r;
-            int c_ = cur_c;
-            vector<HCDFSNode> nexts;
             while (true) {
                 r_ += dr;
                 c_ += dc;
                 if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
                     break;
                 }
-                if (cur_used[r_ * n + c_]) {
+                if (used[r_ * n + c_]) {
                     continue;
                 }
-                auto used_ = cur_used;
-                used_[r_ * n + c_] = true;
-                auto moves_ = cur_moves;
-                moves_.push_back({r_, c_});
-                nexts.push_back({r_, c_, moves_, used_});
+                if (revs[arrow] == grid[r_][c_].arrow) {
+                    candidates.push_back({r_, c_});
+                }
             }
 
-            shuffle(nexts.begin(), nexts.end(), mt);
-
-            for (auto& next : nexts) {
-                st.push(next);
+            if (candidates.empty()) {
+                continue;
             }
+
+            pair<int, int> new_end = candidates[xorshf96() % candidates.size()];
+            new_moves = best_moves;
+            new_moves.push_back(new_end);
+            new_used = used;
+            new_used[new_end.first * n + new_end.second] = true;
         }
 
-        if (founded_moves.empty()) {
-            continue;
+        if (nb == BreakStart) {
+            for (int i = 1; i < best_moves.size(); i++) {
+                new_moves.push_back(best_moves[i]);
+            }
+            new_used = used;
+            new_used[best_moves[0].first * n + best_moves[0].second] = false;
         }
 
-        // 最も長い操作列を求めたので、それが既存のパスより長い場合は更新する
+        if (nb == BreakEnd) {
+            for (int i = 0; i < best_moves.size() - 1; i++) {
+                new_moves.push_back(best_moves[i]);
+            }
+            new_used = used;
+            new_used[best_moves.back().first * n + best_moves.back().second] = false;
+        }
 
-        vector<pair<int, int>> new_moves;
-        for (int i = 0; i < l - 1; i++) {
-            new_moves.push_back(best_moves[i]);
-        }
-        for (int i = 0; i < founded_moves.size(); i++) {
-            new_moves.push_back(founded_moves[i]);
-        }
-        for (int i = r + 1; i < best_moves.size(); i++) {
-            new_moves.push_back(best_moves[i]);
-        }
         if (new_moves.size() <= 3) {
             continue;
         }
@@ -340,11 +458,14 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl) {
 
         if (d > 0 || exp(d / T) > (double)(xorshf96() % 1000) / 1000) {
             updates++;
+            // eprintln("score:", best_score, "\tdiff:", d, "\tT:", T, "\tprob:", exp(d / T));
             best_moves = new_moves;
             best_score = new_score;
-            used = founded_used;
+            used = new_used;
         }
     }
+
+    eprintln("updates", updates, "iters", iters);
 
     return {best_moves, best_score};
 }
@@ -387,6 +508,7 @@ int main() {
 
     rep(i, trial) {
         auto [moves, score] = hill_climbing(all_tl / trial);
+        eprintln("trial", i, "score", score);
         if (score > best_score) {
             best_moves = moves;
             best_score = score;
