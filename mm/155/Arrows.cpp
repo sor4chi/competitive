@@ -60,6 +60,16 @@ map<Arrow, pair<int, int>> dirs = {
     {Left, {0, -1}},
     {TopLeft, {-1, -1}}};
 
+map<Arrow, Arrow> revs = {
+    {Top, Bottom},
+    {TopRight, BottomLeft},
+    {Right, Left},
+    {BottomRight, TopLeft},
+    {Bottom, Top},
+    {BottomLeft, TopRight},
+    {Left, Right},
+    {TopLeft, BottomRight}};
+
 struct Cell {
     Arrow arrow;
     int mult;
@@ -202,6 +212,152 @@ pair<vector<pair<int, int>>, int> dfs_greedy(int r, int c, int tl) {
     return {best_moves_v, best_score};
 }
 
+struct BeamNode {
+    int r;
+    int c;
+    int score;
+    vector<pair<int, int>> moves;
+    bitset<900> used;
+};
+
+pair<vector<pair<int, int>>, int> rev_beam(int beam_width) {
+    // gridの5のマスを全て列挙
+    vector<tuple<int, int, int>> bigger;
+    rep(r, n) {
+        rep(c, n) {
+            bigger.push_back({grid[r][c].mult, r, c});
+        }
+    }
+    sort(bigger.begin(), bigger.end(), greater<tuple<int, int, int>>());
+    vector<BeamNode> beams;
+    // 5のマスから最大beam_width個のビームを生成
+    rep(i, min(beam_width, (int)bigger.size())) {
+        auto [_, r, c] = bigger[i];
+        bitset<900> used;
+        used[r * n + c] = true;
+        beams.push_back({r, c, 0, {{r, c}}, used});
+    }
+    // 逆向きに探索する
+    vector<pair<int, int>> best_moves;
+    int best_score = 0;
+    int iter = 0;
+    chrono::system_clock::time_point start = chrono::system_clock::now();
+    while (true) {
+        chrono::system_clock::time_point now = chrono::system_clock::now();
+        if (chrono::duration_cast<chrono::milliseconds>(now - start).count() > 9000) {
+            beam_width = max(beam_width / 2, 10);
+        }
+        // vector<BeamNode> next_beams;
+        priority_queue<BeamNode, vector<BeamNode>, function<bool(const BeamNode&, const BeamNode&)>> next_beams(
+            [](const BeamNode& a, const BeamNode& b) {
+                return a.score > b.score;
+            });
+        for (auto& beam : beams) {
+            // 逆なので今いる方向から8方向に、自分側を向いている矢印を探す
+            for (auto [arrow, dir] : dirs) {
+                auto [dr, dc] = dir;
+                int r_ = beam.r;
+                int c_ = beam.c;
+                while (true) {
+                    r_ += dr;
+                    c_ += dc;
+                    if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
+                        break;
+                    }
+                    if (beam.used[r_ * n + c_]) {
+                        continue;
+                    }
+                    auto [arrow_, m] = grid[r_][c_];
+                    if (revs[arrow] == arrow_) {
+                        auto used_ = beam.used;
+                        used_[r_ * n + c_] = true;
+                        auto moves_ = beam.moves;
+                        moves_.push_back({r_, c_});
+                        BeamNode next = {r_, c_, beam.score + m, moves_, used_};
+                        // next_beams.push_back(next);
+                        next_beams.push(next);
+                        if (next_beams.size() > beam_width) {
+                            next_beams.pop();
+                        }
+                    }
+                }
+            }
+        }
+
+        if (next_beams.empty()) {
+            break;
+        }
+
+        // sort(next_beams.begin(), next_beams.end(), [](const BeamNode& a, const BeamNode& b) {
+        //     return a.score > b.score;
+        //     // return (10 * a.moves.size() - a.score) < (10 * b.moves.size() - b.score);
+        // });
+
+        beams.clear();
+
+        // // もしiterがmults[5] + mults[3]を超えたら、BEAM_WIDTHを400にする
+        // if (iter > mults[5] + mults[3]) {
+        //     beam_width = 20;
+        // }
+
+        // for (int i = 0; i < min(beam_width, (int)next_beams.size()); i++) {
+        //     beams.push_back(next_beams[i]);
+        // }
+
+        while (!next_beams.empty()) {
+            beams.push_back(next_beams.top());
+            next_beams.pop();
+        }
+
+        iter++;
+    }
+
+    for (auto& beam : beams) {
+        int score = 0;
+        rep1(i, beam.moves.size()) {
+            int rev_i = beam.moves.size() - i;
+            auto [r, c] = beam.moves[rev_i];
+            auto [a, m] = grid[r][c];
+            score += m * i;
+        }
+        if (score > best_score) {
+            eprintln("score:", score);
+            best_score = score;
+            best_moves = beam.moves;
+        }
+    }
+
+    reverse(best_moves.begin(), best_moves.end());
+
+    return {best_moves, best_score};
+}
+
+map<int, int> N_WIDTH = {
+    {8, 30000},
+    {9, 18000},
+    {10, 12000},
+    {11, 8300},
+    {12, 6300},
+    {13, 4500},
+    {14, 3300},
+    {15, 2700},
+    {16, 2150},
+    {17, 1800},
+    {18, 1500},
+    {19, 1200},
+    {20, 950},
+    {21, 740},
+    {22, 650},
+    {23, 530},
+    {24, 430},
+    {25, 350},
+    {26, 300},
+    {27, 250},
+    {28, 210},
+    {29, 190},
+    {30, 175},
+};
+
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
@@ -226,18 +382,7 @@ int main() {
     vector<pair<int, int>> best_moves;
     int best_score = 0;
 
-    int trial = -1;
-    // N=8の時は100マス, N=30の時は30となるように滑らかに変化させる
-    int N_MIN = 8;
-    int N_MAX = 30;
-    int TRIAL_MIN = 20;
-    int TRIAL_MAX = 100;
-    int x = n - N_MIN;
-    trial = x * (TRIAL_MIN - TRIAL_MAX) / (N_MAX - N_MIN) + TRIAL_MAX;
-    eprintln("trial:", trial);
-    trial = min(trial, n * n);
-    eprintln("trial(capped):", trial);
-    int tl = 9500;
+    int trial = 1;
 
     struct Cand {
         int mult;
@@ -254,25 +399,59 @@ int main() {
         }
     }
 
-    // 中心に近く、mが低いマスからスタートする
-    sort(start_candidates.begin(), start_candidates.end(), [](const auto& a, const auto& b) {
-        // multが低い方が良い
-        if (a.mult != b.mult) {
-            return a.mult < b.mult;
-        }
-        // 中心に近い方が良い
-        return a.dist_from_center < b.dist_from_center;
-    });
+    if (n <= 13) {
+        // 中心から遠く、mが高いマスからスタートする
+        sort(start_candidates.begin(), start_candidates.end(), [](const auto& a, const auto& b) {
+            // multが高い方が良い
+            if (a.mult != b.mult) {
+                return a.mult > b.mult;
+            }
+            // 中心から遠い方が良い
+            return a.dist_from_center > b.dist_from_center;
+        });
 
-    assert(start_candidates.size() >= trial);
+        assert(start_candidates.size() >= trial);
 
-    rep(i, trial) {
-        auto [r, c] = start_candidates[i].pos;
-        auto [moves, score] = dfs_greedy(r, c, tl / trial);
-        eprintln("start:", r, c, "score:", score);
-        if (score > best_score) {
-            best_moves = moves;
-            best_score = score;
+        int beam_width = N_WIDTH[n];
+        chrono::system_clock::time_point start = chrono::system_clock::now();
+        auto [moves, score] = rev_beam(beam_width);
+        chrono::system_clock::time_point end = chrono::system_clock::now();
+        eprintln("beam_width:", beam_width, "score:", score, "time:", chrono::duration_cast<chrono::milliseconds>(end - start).count());
+
+        best_moves = moves;
+        best_score = score;
+    } else {
+        // N=8の時は100マス, N=30の時は10となるように滑らかに変化させる
+        int N_MIN = 8;
+        int N_MAX = 30;
+        int TRIAL_MIN = 10;
+        int TRIAL_MAX = 100;
+        int x = n - N_MIN;
+        trial = x * (TRIAL_MIN - TRIAL_MAX) / (N_MAX - N_MIN) + TRIAL_MAX;
+        eprintln("trial:", trial);
+        trial = min(trial, n * n);
+        eprintln("trial(capped):", trial);
+        int tl = 9900;
+        // 中心に近く、mが低いマスからスタートする
+        sort(start_candidates.begin(), start_candidates.end(), [](const auto& a, const auto& b) {
+            // multが低い方が良い
+            if (a.mult != b.mult) {
+                return a.mult < b.mult;
+            }
+            // 中心に近い方が良い
+            return a.dist_from_center < b.dist_from_center;
+        });
+
+        assert(start_candidates.size() >= trial);
+
+        rep(i, trial) {
+            auto [r, c] = start_candidates[i].pos;
+            auto [moves, score] = dfs_greedy(r, c, tl / trial);
+            eprintln("start:", r, c, "score:", score);
+            if (score > best_score) {
+                best_moves = moves;
+                best_score = score;
+            }
         }
     }
 
@@ -281,7 +460,7 @@ int main() {
         println(r, c);
     }
 
-    // println("Score =", best_score);
+    println("Score =", best_score);
 
     return 0;
 }
