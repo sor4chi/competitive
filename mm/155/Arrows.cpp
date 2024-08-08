@@ -648,12 +648,20 @@ int main() {
         }
     }
 
+    int each_tl = all_tl / trial;
     rep(i, trial) {
-        auto [moves, score] = hill_climbing(all_tl / trial, i);
+        auto [moves, score] = hill_climbing(each_tl, i);
         eprintln("trial", i, "score", score);
         if (score > best_score) {
             best_moves = moves;
             best_score = score;
+        }
+        // もし残り1回分以上の時間が残っていない場合は終了
+        int progress = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - all_start).count();
+        int left = all_tl - progress;
+        if (left < each_tl) {
+            eprintln("time out");
+            break;
         }
     }
 
