@@ -340,7 +340,7 @@ enum Neighbor {
 };
 
 map<Neighbor, int> neighbor_weights = {
-    {Break, 1},
+    {Break, 5},
     {ExpandStart, 1},
     {ExpandEnd, 1},
     // {BreakStart, 1},
@@ -664,7 +664,6 @@ int main() {
 
 #if DEBUG
     plotter.plot();
-    println("Score =", best_score);
 #endif
 
     return 0;

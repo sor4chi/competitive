@@ -25,7 +25,7 @@ const SEED_END = 100;
 console.log(`Testing seeds from ${SEED_START} to ${SEED_END}...`);
 for (let seed = SEED_START; seed <= SEED_END; seed++) {
   console.log(`Testing seed ${seed}...`);
-  const res = execSync(`time ./a.out < ./in/${seed}.txt`);
+  const res = execSync(`java -jar tester.jar -exec "./a.out" -seed ${seed} -novis`);
   const SCORE_RE = /Score = (\d+)/;
   const match = SCORE_RE.exec(res.toString());
   if (match) {
