@@ -644,8 +644,8 @@ int main() {
         }
     }
 
-    int trial = 2;
-    int each_tl = 4500;
+    int trial = 3;
+    int each_tl = 3200;
     rep(i, trial) {
         auto [moves, score] = hill_climbing(each_tl, i);
         eprintln("trial", i, "score", score);
