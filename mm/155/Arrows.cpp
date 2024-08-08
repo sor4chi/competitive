@@ -363,11 +363,19 @@ Neighbor neighbor() {
 // 山登り法で最適解を探す
 pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
     chrono::system_clock::time_point start = chrono::system_clock::now();
-    // まずはランダムなスタート地点を選ぶ
-    int r = xorshf96() % n;
-    int c = xorshf96() % n;
-    // DFSで初期解を求める
-    auto [best_moves, best_score] = random_dfs_greedy(r, c, 1);
+
+    vector<pair<int, int>> best_moves;
+    int best_score = 0;
+    while (best_moves.size() <= 3) {
+        // まずはランダムなスタート地点を選ぶ
+        int r = xorshf96() % n;
+        int c = xorshf96() % n;
+        // DFSで初期解を求める
+        auto [moves, score] = random_dfs_greedy(r, c, 1);
+        best_moves = moves;
+        best_score = score;
+    }
+
     bitset<900> initial_used;
     for (auto [r, c] : best_moves) {
         initial_used[r * n + c] = true;
@@ -399,7 +407,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
             // 一部をランダムに破壊
             int moves_size = current_moves.size();
             int l = xorshf96() % (moves_size - 1) + 1;
-            int width = xorshf96() % n + 1;
+            int width = xorshf96() % 8 + 1;
             int r = min(moves_size - 1, l + width);
             auto broken_used = current_used;
             pair<int, int> start_cell = current_moves[l - 1];
