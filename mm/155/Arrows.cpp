@@ -629,10 +629,6 @@ int main() {
     vector<pair<int, int>> best_moves;
     int best_score = 0;
 
-    // (8, 30), (30, 5)を通る直線
-    int trial = -1.1363636363636 * n + 39.090909090909;
-    eprintln("trial", trial);
-
     struct Cand {
         int mult;
         int dist_from_center;
@@ -648,20 +644,14 @@ int main() {
         }
     }
 
-    int each_tl = all_tl / trial;
+    int trial = 2;
+    int each_tl = 4500;
     rep(i, trial) {
         auto [moves, score] = hill_climbing(each_tl, i);
         eprintln("trial", i, "score", score);
         if (score > best_score) {
             best_moves = moves;
             best_score = score;
-        }
-        // もし残り1回分以上の時間が残っていない場合は終了
-        int progress = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - all_start).count();
-        int left = all_tl - progress;
-        if (left < each_tl) {
-            eprintln("time out");
-            break;
         }
     }
 
