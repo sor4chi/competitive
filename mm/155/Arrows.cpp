@@ -341,8 +341,8 @@ enum Neighbor {
 
 map<Neighbor, int> neighbor_weights = {
     {Break, 1},
-    // {ExpandStart, 1},
-    // {ExpandEnd, 1},
+    {ExpandStart, 1},
+    {ExpandEnd, 1},
     // {BreakStart, 1},
     // {BreakEnd, 1},
 };
