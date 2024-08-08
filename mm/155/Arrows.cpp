@@ -1,4 +1,10 @@
+#define DEBUG false
+
+#if DEBUG
+#else
 #pragma GCC target "sse4.2"
+#endif
+
 #include <bits/stdc++.h>
 
 using namespace std;
@@ -95,6 +101,46 @@ int n;
 map<int, int> mults;
 vector<vector<Cell>> grid;
 int all_tl = 9800;
+chrono::system_clock::time_point all_start = chrono::system_clock::now();
+
+#if DEBUG
+struct Plotter {
+    vector<pair<string, vector<int>>> buffer;
+
+    void add(const vector<int>& row, string label = "") {
+        buffer.push_back({label, row});
+    }
+
+    void plot() {
+        eprintln("plotting...");
+        system("rm -f plot.png");
+        string command = "python3 -c 'import matplotlib.pyplot as plt\n";
+        command += "import numpy as np\n";
+        // buffer.size()個のグラフを重ねて描画
+        command += "fig, ax = plt.subplots()\n";
+        for (int i = 0; i < buffer.size(); i++) {
+            command += "ax.plot(np.array(";
+            command += "[";
+            for (int j = 0; j < buffer[i].second.size(); j++) {
+                command += to_string(buffer[i].second[j]);
+                if (j != buffer[i].second.size() - 1) {
+                    command += ",";
+                }
+            }
+            command += "]), label=\"";
+            command += buffer[i].first;
+            command += "\")\n";
+        }
+        command += "plt.legend()\n";
+        command += "plt.xlabel(\"iteration (x100)\")\n";
+        command += "plt.ylabel(\"score\")\n";
+        command += "plt.savefig(\"plot.png\")'";
+        system(command.c_str());
+    }
+};
+
+Plotter plotter;
+#endif
 
 struct DFSNode {
     int r;
@@ -181,6 +227,63 @@ pair<vector<pair<int, int>>, int> dfs_greedy(int r, int c, int tl) {
     return {best_moves, best_score};
 }
 
+pair<vector<pair<int, int>>, int> random_dfs_greedy(int r, int c, int tl) {
+    int n = grid.size();
+    bitset<900> used;
+    used[r * n + c] = true;
+    vector<pair<int, int>> best_moves;
+    int best_score = 0;
+    stack<DFSNode> st;
+    vector<pair<int, int>> initial_moves;
+    initial_moves.push_back({r, c});
+    DFSNode initial = {r, c, 1, grid[r][c].mult, initial_moves, used};
+    st.push(initial);
+    chrono::system_clock::time_point start = chrono::system_clock::now();
+    mt19937 mt(xorshf96());
+
+    while (!st.empty() && chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start).count() < tl) {
+        auto [r, c, i, score, moves, used] = st.top();
+        st.pop();
+
+        if (score > best_score) {
+            best_score = score;
+            best_moves = moves;
+        }
+
+        auto [arrow, m] = grid[r][c];
+        auto [dr, dc] = dirs[arrow];
+
+        vector<NextDFSNode> nexts;
+        int r_ = r;
+        int c_ = c;
+        int far = 0;
+        while (true) {
+            r_ += dr;
+            c_ += dc;
+            if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
+                break;
+            }
+            if (used[r_ * n + c_]) {
+                continue;
+            }
+            bitset<900> used_ = used;
+            used_[r_ * n + c_] = true;
+            vector<pair<int, int>> moves_ = moves;
+            moves_.push_back({r_, c_});
+            DFSNode next = {r_, c_, i + 1, score + grid[r_][c_].mult * (i + 1), moves_, used_};
+            nexts.push_back({next, grid[r_][c_].mult, far++});
+        }
+
+        shuffle(nexts.begin(), nexts.end(), mt);
+
+        for (auto& next : nexts) {
+            st.push(next.node);
+        }
+    }
+
+    return {best_moves, best_score};
+}
+
 int eval(const vector<pair<int, int>>& moves) {
     int score = 0;
     rep(i, moves.size()) {
@@ -238,8 +341,8 @@ enum Neighbor {
 
 map<Neighbor, int> neighbor_weights = {
     {Break, 1},
-    {ExpandStart, 1},
-    {ExpandEnd, 1},
+    // {ExpandStart, 1},
+    // {ExpandEnd, 1},
     // {BreakStart, 1},
     // {BreakEnd, 1},
 };
@@ -258,43 +361,53 @@ Neighbor neighbor() {
 }
 
 // 山登り法で最適解を探す
-pair<vector<pair<int, int>>, int> hill_climbing(int tl) {
+pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
     chrono::system_clock::time_point start = chrono::system_clock::now();
     // まずはランダムなスタート地点を選ぶ
     int r = xorshf96() % n;
     int c = xorshf96() % n;
     // DFSで初期解を求める
-    auto [best_moves, best_score] = dfs_greedy(r, c, 1);
-    bitset<900> used;
+    auto [best_moves, best_score] = random_dfs_greedy(r, c, 1);
+    bitset<900> initial_used;
     for (auto [r, c] : best_moves) {
-        used[r * n + c] = true;
+        initial_used[r * n + c] = true;
     }
+
+    vector<pair<int, int>> current_moves = best_moves;
+    bitset<900> current_used = initial_used;
+    int current_score = best_score;
 
     // 部分破壊 -> 再構築の操作を繰り返す
     // 焼きなまし
-    double start_temp = 1e3;
-    double end_temp = 1e-3;
+    double start_temp = 20 * powf(n, 1.25);
+    double end_temp = 0;
     int updates = 0;
     int iters = 0;
     mt19937 mt(xorshf96());
+
+    vector<int> score_history;
+
     while (chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start).count() < tl) {
+        if (chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - all_start).count() > all_tl) {
+            break;
+        }
         iters++;
         vector<pair<int, int>> new_moves;
         bitset<900> new_used;
         Neighbor nb = neighbor();
         if (nb == Break) {
             // 一部をランダムに破壊
-            int moves_size = best_moves.size();
+            int moves_size = current_moves.size();
             int l = xorshf96() % (moves_size - 1) + 1;
             int width = xorshf96() % n + 1;
             int r = min(moves_size - 1, l + width);
-            auto current_used = used;
-            pair<int, int> start_cell = best_moves[l - 1];
-            pair<int, int> end_cell = best_moves[r];
+            auto broken_used = current_used;
+            pair<int, int> start_cell = current_moves[l - 1];
+            pair<int, int> end_cell = current_moves[r];
 
             for (int i = l; i <= r; i++) {
-                auto [r_, c_] = best_moves[i];
-                current_used[r_ * n + c_] = false;
+                auto [r_, c_] = current_moves[i];
+                broken_used[r_ * n + c_] = false;
             }
 
             // startとendの間のマスをdfsで探索し、今よりもさらに長い操作列を求める
@@ -306,7 +419,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl) {
                 bitset<900> used;
             };
             stack<HCDFSNode> st;
-            st.push({start_cell.first, start_cell.second, {start_cell}, current_used});
+            st.push({start_cell.first, start_cell.second, {start_cell}, broken_used});
             // 今の最適解よりも長い操作列が見つかったら、それを最適解とする
             chrono::system_clock::time_point start_dfs = chrono::system_clock::now();
             int tl_dfs = 10;
@@ -353,19 +466,19 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl) {
             // 最も長い操作列を求めたので、それが既存のパスより長い場合は更新する
 
             for (int i = 0; i < l - 1; i++) {
-                new_moves.push_back(best_moves[i]);
+                new_moves.push_back(current_moves[i]);
             }
             for (int i = 0; i < founded_moves.size(); i++) {
                 new_moves.push_back(founded_moves[i]);
             }
-            for (int i = r + 1; i < best_moves.size(); i++) {
-                new_moves.push_back(best_moves[i]);
+            for (int i = r + 1; i < current_moves.size(); i++) {
+                new_moves.push_back(current_moves[i]);
             }
         }
 
         if (nb == ExpandStart) {
             // スタート地点からrev方面に一マス拡張
-            pair<int, int> start_cell = best_moves[0];
+            pair<int, int> start_cell = current_moves[0];
             auto [r, c] = start_cell;
             vector<pair<int, int>> candidates;
             for (auto [arrow, dir] : dirs) {
@@ -378,7 +491,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl) {
                     if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
                         break;
                     }
-                    if (used[r_ * n + c_]) {
+                    if (current_used[r_ * n + c_]) {
                         continue;
                     }
                     if (revs[arrow] == grid[r_][c_].arrow) {
@@ -393,14 +506,14 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl) {
 
             pair<int, int> new_start = candidates[xorshf96() % candidates.size()];
             new_moves.push_back(new_start);
-            new_moves.insert(new_moves.end(), best_moves.begin(), best_moves.end());
-            new_used = used;
+            new_moves.insert(new_moves.end(), current_moves.begin(), current_moves.end());
+            new_used = current_used;
             new_used[new_start.first * n + new_start.second] = true;
         }
 
         if (nb == ExpandEnd) {
             // ゴール地点からrev方面に一マス拡張
-            pair<int, int> end_cell = best_moves.back();
+            pair<int, int> end_cell = current_moves.back();
             auto [r, c] = end_cell;
             vector<pair<int, int>> candidates;
             int r_ = r;
@@ -413,7 +526,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl) {
                 if (r_ < 0 || r_ >= n || c_ < 0 || c_ >= n) {
                     break;
                 }
-                if (used[r_ * n + c_]) {
+                if (current_used[r_ * n + c_]) {
                     continue;
                 }
                 if (revs[arrow] == grid[r_][c_].arrow) {
@@ -426,51 +539,70 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl) {
             }
 
             pair<int, int> new_end = candidates[xorshf96() % candidates.size()];
-            new_moves = best_moves;
+            new_moves = current_moves;
             new_moves.push_back(new_end);
-            new_used = used;
+            new_used = current_used;
             new_used[new_end.first * n + new_end.second] = true;
         }
 
         if (nb == BreakStart) {
-            for (int i = 1; i < best_moves.size(); i++) {
-                new_moves.push_back(best_moves[i]);
+            for (int i = 1; i < current_moves.size(); i++) {
+                new_moves.push_back(current_moves[i]);
             }
-            new_used = used;
-            new_used[best_moves[0].first * n + best_moves[0].second] = false;
+            new_used = current_used;
+            new_used[current_moves[0].first * n + current_moves[0].second] = false;
         }
 
         if (nb == BreakEnd) {
-            for (int i = 0; i < best_moves.size() - 1; i++) {
-                new_moves.push_back(best_moves[i]);
+            for (int i = 0; i < current_moves.size() - 1; i++) {
+                new_moves.push_back(current_moves[i]);
             }
-            new_used = used;
-            new_used[best_moves.back().first * n + best_moves.back().second] = false;
+            new_used = current_used;
+            new_used[current_moves.back().first * n + current_moves.back().second] = false;
         }
 
         if (new_moves.size() <= 3) {
             continue;
         }
+
         int new_score = eval(new_moves);
 
-        int d = new_score - best_score;
-        double T = start_temp + (end_temp - start_temp) * (chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start).count()) / tl;
+        int diff = new_score - current_score;
+        chrono::system_clock::time_point now = chrono::system_clock::now();
+        int progress = chrono::duration_cast<chrono::milliseconds>(now - start).count();
+        double temp = start_temp + (end_temp - start_temp) * progress / tl;
+        // 対数的に温度を下げる
+        // double temp = start_temp * pow(end_temp / start_temp, (double)progress / tl);
+        double prob = exp(diff / temp);
 
-        if (d > 0 || exp(d / T) > (double)(xorshf96() % 1000) / 1000) {
+        if (diff > 0 || prob > (double)(xorshf96() % 1000) / 1000) {
+#if DEBUG
+            if (updates % 10 == 0) {
+                score_history.push_back(current_score);
+            }
+#endif
+            current_moves = new_moves;
+            current_score = new_score;
+            current_used = new_used;
             updates++;
-            // eprintln("score:", best_score, "\tdiff:", d, "\tT:", T, "\tprob:", exp(d / T));
-            best_moves = new_moves;
-            best_score = new_score;
-            used = new_used;
+        }
+
+        if (current_score > best_score) {
+            best_moves = current_moves;
+            best_score = current_score;
         }
     }
 
     eprintln("updates", updates, "iters", iters);
+#if DEBUG
+    plotter.add(score_history, "trial" + to_string(trial));
+#endif
 
     return {best_moves, best_score};
 }
 
 int main() {
+    all_start = chrono::system_clock::now();
     input(n);
     grid = vector<vector<Cell>>(n, vector<Cell>(n));
     mults[1] = 0;
@@ -489,7 +621,9 @@ int main() {
     vector<pair<int, int>> best_moves;
     int best_score = 0;
 
-    int trial = 10;
+    // (8, 30), (30, 5)を通る直線
+    int trial = -1.1363636363636 * n + 39.090909090909;
+    eprintln("trial", trial);
 
     struct Cand {
         int mult;
@@ -507,7 +641,7 @@ int main() {
     }
 
     rep(i, trial) {
-        auto [moves, score] = hill_climbing(all_tl / trial);
+        auto [moves, score] = hill_climbing(all_tl / trial, i);
         eprintln("trial", i, "score", score);
         if (score > best_score) {
             best_moves = moves;
@@ -520,11 +654,10 @@ int main() {
         println(r, c);
     }
 
-    // if (validate(best_moves)) {
-    //     println("Score =", best_score);
-    // } else {
-    //     println("Score = -1.0");
-    // }
+#if DEBUG
+    plotter.plot();
+    println("Score =", best_score);
+#endif
 
     return 0;
 }
