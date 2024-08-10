@@ -332,10 +332,10 @@ pair<vector<pair<int, int>>, int> random_dfs_greedy(int r, int c, int tl, Xorshi
     return {best_moves, best_score};
 }
 
-int eval(const vector<pair<int, int>>& moves) {
+int eval(const vector<short>& moves) {
     int score = 0;
     rep(i, moves.size()) {
-        auto [r, c] = moves[i];
+        auto [r, c] = make_pair(moves[i] / n, moves[i] % n);
         auto [_, m] = grid[r][c];
         score += m * (i + 1);
     }
@@ -413,24 +413,30 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
     Xorshift rng(trial);
     chrono::system_clock::time_point start = chrono::system_clock::now();
 
-    vector<pair<int, int>> best_moves;
+    vector<short> best_moves;
     int best_score = 0;
-    while (best_moves.size() <= 3) {
+    while (true) {
         // まずはランダムなスタート地点を選ぶ
         int r = rng.randint(0, n - 1);
         int c = rng.randint(0, n - 1);
         // DFSで初期解を求める
         auto [moves, score] = random_dfs_greedy(r, c, 1, rng);
-        best_moves = moves;
-        best_score = score;
+        if (moves.size() >= 3) {
+            best_moves.clear();
+            for (auto [r, c] : moves) {
+                best_moves.push_back(r * n + c);
+            }
+            best_score = score;
+            break;
+        }
     }
 
     bitset<900> initial_used;
-    for (auto [r, c] : best_moves) {
-        initial_used[r * n + c] = true;
+    for (auto move : best_moves) {
+        initial_used[move] = true;
     }
 
-    vector<pair<int, int>> current_moves = best_moves;
+    vector<short> current_moves = best_moves;
     bitset<900> current_used = initial_used;
     int current_score = best_score;
 
@@ -446,7 +452,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
 
     while (chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start).count() < tl) {
         iters++;
-        vector<pair<int, int>> new_moves;
+        vector<short> new_moves;
         bitset<900> new_used;
         Neighbor nb = neighbor(rng);
         if (nb == Break) {
@@ -456,35 +462,35 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
             int width = rng.randint(1, 8);
             int r = min(moves_size - 1, l + width);
             auto broken_used = current_used;
-            pair<int, int> start_cell = current_moves[l - 1];
-            pair<int, int> end_cell = current_moves[r];
+            short start_cell = current_moves[l - 1];
+            short end_cell = current_moves[r];
 
             for (int i = l; i <= r; i++) {
-                auto [r_, c_] = current_moves[i];
-                broken_used[r_ * n + c_] = false;
+                auto move = current_moves[i];
+                broken_used[move] = false;
             }
 
             // startとendの間のマスをdfsで探索し、今よりもさらに長い操作列を求める
-            vector<pair<int, int>> founded_moves;
+            vector<short> founded_moves;
             struct HCDFSNode {
-                int r;
-                int c;
-                vector<pair<int, int>> moves;
+                short pos;
+                vector<short> moves;
                 bitset<900> used;
             };
             stack<HCDFSNode> st;
-            st.push({start_cell.first, start_cell.second, {start_cell}, broken_used});
+            st.push({start_cell, {start_cell}, broken_used});
             // 今の最適解よりも長い操作列が見つかったら、それを最適解とする
             chrono::system_clock::time_point start_dfs = chrono::system_clock::now();
             int tl_dfs = 10;
             while (!st.empty() && chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start_dfs).count() < tl_dfs) {
-                auto [cur_r, cur_c, cur_moves, cur_used] = st.top();
+                auto [cur_pos, cur_moves, cur_used] = st.top();
                 st.pop();
-                if (cur_r == end_cell.first && cur_c == end_cell.second) {
+                if (cur_pos == end_cell) {
                     founded_moves = cur_moves;
                     new_used = cur_used;
                     break;
                 }
+                auto [cur_r, cur_c] = make_pair(cur_pos / n, cur_pos % n);
                 auto [arrow, m] = grid[cur_r][cur_c];
                 auto [dr, dc] = dirs[arrow];
                 int r_ = cur_r;
@@ -502,8 +508,8 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
                     auto used_ = cur_used;
                     used_[r_ * n + c_] = true;
                     auto moves_ = cur_moves;
-                    moves_.push_back({r_, c_});
-                    nexts.push_back({r_, c_, moves_, used_});
+                    moves_.push_back(r_ * n + c_);
+                    nexts.push_back({(short)(r_ * n + c_), moves_, used_});
                 }
 
                 shuffle(nexts.begin(), nexts.end(), mt);
@@ -532,9 +538,9 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
 
         if (nb == ExpandStart) {
             // スタート地点からrev方面に一マス拡張
-            pair<int, int> start_cell = current_moves[0];
-            auto [r, c] = start_cell;
-            vector<pair<int, int>> candidates;
+            short start_cell = current_moves[0];
+            auto [r, c] = make_pair(start_cell / n, start_cell % n);
+            vector<short> candidates;
             for (auto [arrow, dir] : dirs) {
                 int r_ = r;
                 int c_ = c;
@@ -549,7 +555,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
                         continue;
                     }
                     if (revs[arrow] == grid[r_][c_].arrow) {
-                        candidates.push_back({r_, c_});
+                        candidates.push_back(r_ * n + c_);
                     }
                 }
             }
@@ -558,18 +564,18 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
                 continue;
             }
 
-            pair<int, int> new_start = candidates[rng.randrange(candidates.size())];
+            short new_start = candidates[rng.randrange(candidates.size())];
             new_moves.push_back(new_start);
             new_moves.insert(new_moves.end(), current_moves.begin(), current_moves.end());
             new_used = current_used;
-            new_used[new_start.first * n + new_start.second] = true;
+            new_used[new_start] = true;
         }
 
         if (nb == ExpandEnd) {
             // ゴール地点からrev方面に一マス拡張
-            pair<int, int> end_cell = current_moves.back();
-            auto [r, c] = end_cell;
-            vector<pair<int, int>> candidates;
+            short end_cell = current_moves.back();
+            auto [r, c] = make_pair(end_cell / n, end_cell % n);
+            vector<short> candidates;
             int r_ = r;
             int c_ = c;
             auto [arrow, m] = grid[r][c];
@@ -584,7 +590,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
                     continue;
                 }
                 if (revs[arrow] == grid[r_][c_].arrow) {
-                    candidates.push_back({r_, c_});
+                    candidates.push_back(r_ * n + c_);
                 }
             }
 
@@ -592,11 +598,11 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
                 continue;
             }
 
-            pair<int, int> new_end = candidates[rng.randrange(candidates.size())];
+            short new_end = candidates[rng.randrange(candidates.size())];
             new_moves = current_moves;
             new_moves.push_back(new_end);
             new_used = current_used;
-            new_used[new_end.first * n + new_end.second] = true;
+            new_used[new_end] = true;
         }
 
         if (nb == BreakStart) {
@@ -604,7 +610,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
                 new_moves.push_back(current_moves[i]);
             }
             new_used = current_used;
-            new_used[current_moves[0].first * n + current_moves[0].second] = false;
+            new_used[current_moves[0]] = false;
         }
 
         if (nb == BreakEnd) {
@@ -612,7 +618,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
                 new_moves.push_back(current_moves[i]);
             }
             new_used = current_used;
-            new_used[current_moves.back().first * n + current_moves.back().second] = false;
+            new_used[current_moves.back()] = false;
         }
 
         if (new_moves.size() <= 3) {
@@ -652,7 +658,12 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
     plotter.add(score_history, "trial" + to_string(trial));
 #endif
 
-    return {best_moves, best_score};
+    vector<pair<int, int>> best_moves_;
+    for (auto move : best_moves) {
+        best_moves_.push_back({move / n, move % n});
+    }
+
+    return {best_moves_, best_score};
 }
 
 int main() {
