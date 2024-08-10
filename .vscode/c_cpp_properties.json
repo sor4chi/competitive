@@ -8,7 +8,7 @@
         "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks"
       ],
       "compilerPath": "/usr/local/bin/g++",
-      "cStandard": "c20",
+      "cStandard": "c17",
       "cppStandard": "c++20",
       "intelliSenseMode": "macos-gcc-arm64"
     }
