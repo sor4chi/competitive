@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <bitset>
+#include <cassert>
 #include <chrono>
 #include <iostream>
 #include <map>
@@ -66,19 +67,58 @@ enum Arrow {
 
 static unsigned long x = 123456789, y = 362436069, z = 521288629;
 
-unsigned long xorshf96(void) {
-    unsigned long t;
-    x ^= x << 16;
-    x ^= x >> 5;
-    x ^= x << 1;
+// eijiroさんのコードを拝借
+class Xorshift {
+   public:
+    explicit Xorshift(uint32_t seed) : x_(seed) {
+        assert(seed);
+    }
 
-    t = x;
-    x = y;
-    y = z;
-    z = t ^ x ^ y;
+    // [0, stop)
+    uint32_t randrange(uint32_t stop) {
+        assert(stop > 0);
+        next();
+        return x_ % stop;
+    }
 
-    return z;
-}
+    // [start, stop)
+    uint32_t randrange(uint32_t start, uint32_t stop) {
+        assert(start < stop);
+        next();
+        return start + x_ % (stop - start);
+    }
+
+    // [a, b]
+    uint32_t randint(uint32_t a, uint32_t b) {
+        assert(a <= b);
+        return randrange(a, b + 1);
+    }
+
+    // [0.0, 1.0]
+    double random() {
+        next();
+        return static_cast<double>(x_) * (1.0 / static_cast<double>(UINT32_MAX));
+    }
+
+    // [a, b] or [b, a]
+    double uniform(double a, double b) {
+        return a + (b - a) * random();
+    }
+
+    uint32_t raw() {
+        next();
+        return x_;
+    }
+
+   private:
+    uint32_t x_;
+
+    void next() {
+        x_ ^= x_ << 13;
+        x_ ^= x_ >> 17;
+        x_ ^= x_ << 5;
+    }
+};
 
 map<Arrow, pair<int, int>> dirs = {
     {Top, {-1, 0}},
@@ -235,7 +275,7 @@ pair<vector<pair<int, int>>, int> dfs_greedy(int r, int c, int tl) {
     return {best_moves, best_score};
 }
 
-pair<vector<pair<int, int>>, int> random_dfs_greedy(int r, int c, int tl) {
+pair<vector<pair<int, int>>, int> random_dfs_greedy(int r, int c, int tl, Xorshift& rng) {
     int n = grid.size();
     bitset<900> used;
     used[r * n + c] = true;
@@ -247,7 +287,7 @@ pair<vector<pair<int, int>>, int> random_dfs_greedy(int r, int c, int tl) {
     DFSNode initial = {r, c, 1, grid[r][c].mult, initial_moves, used};
     st.push(initial);
     chrono::system_clock::time_point start = chrono::system_clock::now();
-    mt19937 mt(xorshf96());
+    mt19937 mt(rng.raw());
 
     while (!st.empty() && chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start).count() < tl) {
         auto [r, c, i, score, moves, used] = st.top();
@@ -357,7 +397,7 @@ map<Neighbor, int> neighbor_weights = {
 
 vector<Neighbor> choice_neighbors;
 
-Neighbor neighbor() {
+Neighbor neighbor(Xorshift& rng) {
     if (choice_neighbors.empty()) {
         for (auto [neighbor, weight] : neighbor_weights) {
             rep(i, weight) {
@@ -365,21 +405,22 @@ Neighbor neighbor() {
             }
         }
     }
-    return choice_neighbors[xorshf96() % choice_neighbors.size()];
+    return choice_neighbors[rng.randrange(choice_neighbors.size())];
 }
 
 // 山登り法で最適解を探す
 pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
+    Xorshift rng(trial);
     chrono::system_clock::time_point start = chrono::system_clock::now();
 
     vector<pair<int, int>> best_moves;
     int best_score = 0;
     while (best_moves.size() <= 3) {
         // まずはランダムなスタート地点を選ぶ
-        int r = xorshf96() % n;
-        int c = xorshf96() % n;
+        int r = rng.randint(0, n - 1);
+        int c = rng.randint(0, n - 1);
         // DFSで初期解を求める
-        auto [moves, score] = random_dfs_greedy(r, c, 1);
+        auto [moves, score] = random_dfs_greedy(r, c, 1, rng);
         best_moves = moves;
         best_score = score;
     }
@@ -399,23 +440,20 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
     double end_temp = 0;
     int updates = 0;
     int iters = 0;
-    mt19937 mt(xorshf96());
+    mt19937 mt(rng.raw());
 
     vector<int> score_history;
 
     while (chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - start).count() < tl) {
-        if (chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now() - all_start).count() > all_tl) {
-            break;
-        }
         iters++;
         vector<pair<int, int>> new_moves;
         bitset<900> new_used;
-        Neighbor nb = neighbor();
+        Neighbor nb = neighbor(rng);
         if (nb == Break) {
             // 一部をランダムに破壊
             int moves_size = current_moves.size();
-            int l = xorshf96() % (moves_size - 1) + 1;
-            int width = xorshf96() % 8 + 1;
+            int l = rng.randint(1, moves_size - 1);
+            int width = rng.randint(1, 8);
             int r = min(moves_size - 1, l + width);
             auto broken_used = current_used;
             pair<int, int> start_cell = current_moves[l - 1];
@@ -520,7 +558,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
                 continue;
             }
 
-            pair<int, int> new_start = candidates[xorshf96() % candidates.size()];
+            pair<int, int> new_start = candidates[rng.randrange(candidates.size())];
             new_moves.push_back(new_start);
             new_moves.insert(new_moves.end(), current_moves.begin(), current_moves.end());
             new_used = current_used;
@@ -554,7 +592,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
                 continue;
             }
 
-            pair<int, int> new_end = candidates[xorshf96() % candidates.size()];
+            pair<int, int> new_end = candidates[rng.randrange(candidates.size())];
             new_moves = current_moves;
             new_moves.push_back(new_end);
             new_used = current_used;
@@ -591,7 +629,7 @@ pair<vector<pair<int, int>>, int> hill_climbing(int tl, int trial) {
         // double temp = start_temp * pow(end_temp / start_temp, (double)progress / tl);
         double prob = exp(diff / temp);
 
-        if (diff > 0 || prob > (double)(xorshf96() % 1000) / 1000) {
+        if (diff > 0 || prob > rng.random()) {
 #if DEBUG
             if (updates % 10 == 0) {
                 score_history.push_back(current_score);
@@ -655,8 +693,8 @@ int main() {
     int trial = 3;
     int each_tl = 3200;
     rep(i, trial) {
-        auto [moves, score] = hill_climbing(each_tl, i);
-        eprintln("trial", i, "score", score);
+        auto [moves, score] = hill_climbing(each_tl, i + 1);
+        eprintln("trial", i + 1, "score", score);
         if (score > best_score) {
             best_moves = moves;
             best_score = score;
