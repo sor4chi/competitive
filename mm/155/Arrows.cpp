@@ -2,10 +2,18 @@
 
 #if DEBUG
 #else
+#pragma GCC optimize "O3"
 #pragma GCC target "sse4.2"
 #endif
 
-#include <bits/stdc++.h>
+#include <algorithm>
+#include <bitset>
+#include <chrono>
+#include <iostream>
+#include <map>
+#include <random>
+#include <stack>
+#include <vector>
 
 using namespace std;
 typedef long long ll;
