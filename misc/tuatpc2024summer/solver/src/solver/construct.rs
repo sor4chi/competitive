@@ -12,7 +12,7 @@ use rand::{
 };
 
 use crate::{
-    board::Board,
+    board::{Board, HashTable},
     io::{Input, Operation, Output, IO},
 };
 
@@ -55,6 +55,7 @@ impl Solver for ConstructSolver {
     fn solve(&mut self) -> Output {
         let start_all = Instant::now();
         let initial_board = Board::new(self.input.h, self.input.w);
+        let hash_table = HashTable::new(self.input.h, self.input.w);
 
         // cand_shapeを作る。(0,0)を基準として長さ3の形状をすべて
         let mut cand_shapes = vec![];
@@ -112,12 +113,12 @@ impl Solver for ConstructSolver {
                     for i in 0..CONNECTION_WIDTH {
                         let (r, c) = cand_shape[i];
                         let col = column as i32 + c;
-                        new_board.place(r as usize, col as usize, color);
+                        new_board.place(r as usize, col as usize, color, &hash_table);
                         last_connection.push((r as usize, column + c as usize));
                     }
                     let new_score = {
                         let mut board = new_board.clone();
-                        board.organize()
+                        board.organize(&hash_table)
                     };
                     if initial_visited.contains(&new_board.hash) {
                         continue;
@@ -133,21 +134,16 @@ impl Solver for ConstructSolver {
             }
         }
 
-        let mut beam_width = 100;
+        let mut beam_width = 1;
         let mut best_each_best_template = vec![];
-        let mut best_score = 0;
-        let tl = 2500;
+        let tl = 2900;
 
         'beam_width_search: loop {
             eprintln!("beam_width = {}", beam_width);
-            let mut each_best_template = vec![];
             let mut beams = initial_beams.clone();
             let mut current_best_score = 0;
             let mut visited = initial_visited.clone();
             loop {
-                if start_all.elapsed().as_millis() > tl {
-                    break 'beam_width_search;
-                }
                 let mut next_beam = BinaryHeap::new();
                 for beam in &beams {
                     for color in 1..=4 {
@@ -155,6 +151,9 @@ impl Solver for ConstructSolver {
                             continue;
                         }
                         for connection_pos in beam.connect.iter() {
+                            if start_all.elapsed().as_millis() > tl {
+                                break 'beam_width_search;
+                            }
                             'cand_shape_find: for cand_shape in cand_shapes.iter() {
                                 let mut ok = true;
                                 let mut required_margin = vec![0; self.input.w];
@@ -205,7 +204,7 @@ impl Solver for ConstructSolver {
                                     if !new_board.is_placable(row, col) {
                                         let mut r = self.input.h - 1;
                                         while r > row {
-                                            new_board.swap(r, col, r - 1, col);
+                                            new_board.swap(r, col, r - 1, col, &hash_table);
                                             r -= 1;
                                         }
                                     }
@@ -215,12 +214,12 @@ impl Solver for ConstructSolver {
                                         eprintln!("WARNING: not placable");
                                         continue 'cand_shape_find;
                                     }
-                                    new_board.place(row, col, color);
+                                    new_board.place(row, col, color, &hash_table);
                                     new_last_connection.push((row, col));
                                 }
                                 let new_score = {
                                     let mut board = new_board.clone();
-                                    board.organize()
+                                    board.organize(&hash_table)
                                 };
                                 if visited.contains(&new_board.hash) {
                                     continue;
@@ -240,16 +239,9 @@ impl Solver for ConstructSolver {
                     }
                 }
 
-                eprintln!("next_beam.len() = {}", next_beam.len());
-
                 if next_beam.is_empty() {
                     break;
                 }
-
-                eprintln!(
-                    "next_beam.top().score = {}",
-                    next_beam.peek().unwrap().score
-                );
 
                 beams.clear();
                 for beam in next_beam.into_sorted_vec() {
@@ -267,16 +259,15 @@ impl Solver for ConstructSolver {
                     }
                 }
 
-                each_best_template.push((beams[0].score, template_board, color_distribution));
+                best_each_best_template.push((beams[0].score, template_board, color_distribution));
                 current_best_score = current_best_score.max(beams[0].score);
             }
 
-            if current_best_score > best_score {
-                best_score = current_best_score;
-                best_each_best_template = each_best_template.clone();
+            if beam_width <= usize::MAX / 2 {
+                beam_width *= 2;
+            } else {
+                break;
             }
-
-            beam_width *= 2;
         }
 
         best_each_best_template.sort_by_key(|(score, _, _)| *score);
@@ -286,6 +277,8 @@ impl Solver for ConstructSolver {
         let mut operations = vec![];
         let mut board = Board::new(self.input.h, self.input.w);
 
+        eprintln!("beam end: {}", start_all.elapsed().as_millis());
+
         while t < self.input.n {
             let mut cur_each_best_template = best_each_best_template.clone();
             // template_boardの1~4に何の色を対応させるのがいいか全探索
@@ -294,10 +287,7 @@ impl Solver for ConstructSolver {
             let mut best_color_map = vec![];
             let mut best_template_board = None;
 
-            while let Some((expected_score, template_board, color_distribution)) =
-                cur_each_best_template.pop()
-            {
-                eprintln!("expected_score = {}", expected_score);
+            while let Some((_, template_board, color_distribution)) = cur_each_best_template.pop() {
                 let mut ok = false;
                 'find_best_color_map: for color_map in
                     (1..=4).collect::<Vec<_>>().into_iter().permutations(4)
@@ -330,7 +320,6 @@ impl Solver for ConstructSolver {
                 }
 
                 if ok {
-                    eprintln!("apply score = {}", expected_score);
                     break;
                 }
             }
@@ -359,7 +348,7 @@ impl Solver for ConstructSolver {
                         if best_template_board.get(r, c) == Some(mapped_color)
                             && board.is_placable(r, c)
                         {
-                            board.place(r, c, mapped_color);
+                            board.place(r, c, mapped_color, &hash_table);
                             operations.push(Operation {
                                 place: Some((r + 1, c + 1)),
                                 organize: false,
@@ -381,7 +370,7 @@ impl Solver for ConstructSolver {
 
             operations.last_mut().unwrap().organize = true;
 
-            score += board.organize();
+            score += board.organize(&hash_table);
         }
 
         // 残りターン数を出力
@@ -427,7 +416,7 @@ impl Solver for ConstructSolver {
             if let Some(best_pos) = best_pos {
                 place = Some((best_pos.0 + 1, best_pos.1 + 1));
 
-                board.place(best_pos.0, best_pos.1, color);
+                board.place(best_pos.0, best_pos.1, color, &hash_table);
             } else {
                 score += 100; // 捨てる
             }
@@ -435,11 +424,13 @@ impl Solver for ConstructSolver {
             // すべて盤面が埋まっているか、もし最後のターンなら整理する
             let organize = board.is_all_filled() || ti == self.input.n - 1;
             if organize {
-                score += board.organize();
+                score += board.organize(&hash_table);
             }
 
             operations.push(Operation { place, organize });
         }
+
+        eprintln!("construct end: {}", start_all.elapsed().as_millis());
 
         eprintln!("construct = {}", score);
 

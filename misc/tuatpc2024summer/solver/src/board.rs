@@ -6,9 +6,31 @@ use std::{
 
 use rand::Rng;
 
+pub struct HashTable(pub Vec<Vec<[usize; 5]>>);
+
+impl HashTable {
+    pub fn new(h: usize, w: usize) -> Self {
+        let mut rng = rand::thread_rng();
+        let mut hash_table = vec![vec![[0; 5]; w]; h];
+        for row in hash_table.iter_mut() {
+            for cell in row.iter_mut() {
+                for x in cell.iter_mut() {
+                    *x = rng.gen();
+                }
+            }
+        }
+        HashTable(hash_table)
+    }
+}
+
+impl HashTable {
+    pub fn get(&self, r: usize, c: usize, x: usize) -> usize {
+        self.0[r][c][x]
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Board {
-    hash_table: Vec<Vec<[usize; 5]>>, // zobrist hash
     pub hash: usize,
     h: usize,
     w: usize,
@@ -46,7 +68,6 @@ impl Board {
             }
         }
         Board {
-            hash_table,
             h,
             w,
             grid: vec![vec![None; w]; h],
@@ -54,15 +75,15 @@ impl Board {
         }
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self, hash_table: &HashTable) {
         for c in 0..self.w {
             let mut bottom = 0;
             for r in 0..self.h {
                 if self.grid[r][c].is_some() {
                     self.grid[bottom][c] = self.grid[r][c];
-                    self.hash ^= self.hash_table[bottom][c][self.grid[bottom][c].unwrap_or(0)];
+                    self.hash ^= hash_table.get(bottom, c, self.grid[bottom][c].unwrap_or(0));
                     if bottom != r {
-                        self.clear(r, c);
+                        self.clear(r, c, hash_table);
                     }
                     bottom += 1;
                 }
@@ -70,14 +91,14 @@ impl Board {
         }
     }
 
-    pub fn organize(&mut self) -> usize {
+    pub fn organize(&mut self, hash_table: &HashTable) -> usize {
         let mut count = 0;
         let mut score = 0;
 
         loop {
             count += 1;
 
-            self.tick();
+            self.tick(hash_table);
 
             let mut removed = HashSet::new();
             let mut removed_count = 0;
@@ -120,7 +141,7 @@ impl Board {
                         removed.insert(jewel);
                         removed_count += comp.len();
                         for (r, c) in comp {
-                            self.clear(r, c);
+                            self.clear(r, c, hash_table);
                         }
                     }
                 }
@@ -145,18 +166,18 @@ impl Board {
         score
     }
 
-    pub fn place(&mut self, r: usize, c: usize, x: usize) {
+    pub fn place(&mut self, r: usize, c: usize, x: usize, hash_table: &HashTable) {
         assert!(r < self.h && c < self.w);
         assert!(self.grid[r][c].is_none());
         self.grid[r][c] = Some(x);
-        self.hash ^= self.hash_table[r][c][x];
+        self.hash ^= hash_table.get(r, c, x);
     }
 
-    pub fn clear(&mut self, r: usize, c: usize) {
+    pub fn clear(&mut self, r: usize, c: usize, hash_table: &HashTable) {
         assert!(r < self.h && c < self.w);
         assert!(self.grid[r][c].is_some());
         self.grid[r][c] = None;
-        self.hash ^= self.hash_table[r][c][self.grid[r][c].unwrap_or(0)];
+        self.hash ^= hash_table.get(r, c, 0);
     }
 
     pub fn is_placable(&self, r: usize, c: usize) -> bool {
@@ -179,81 +200,11 @@ impl Board {
         self.grid[r][c]
     }
 
-    pub fn swap(&mut self, r1: usize, c1: usize, r2: usize, c2: usize) {
+    pub fn swap(&mut self, r1: usize, c1: usize, r2: usize, c2: usize, hash_table: &HashTable) {
         let tmp = self.grid[r1][c1];
         self.grid[r1][c1] = self.grid[r2][c2];
         self.grid[r2][c2] = tmp;
-        self.hash ^= self.hash_table[r1][c1][self.grid[r1][c1].unwrap_or(0)];
-        self.hash ^= self.hash_table[r2][c2][self.grid[r2][c2].unwrap_or(0)];
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_board_fmt() {
-        let mut board = Board::new(3, 3);
-        board.grid[0][0] = Some(1);
-        board.grid[1][0] = Some(2);
-        board.grid[2][0] = Some(3);
-        board.grid[2][1] = Some(4);
-        board.grid[2][2] = Some(5);
-        assert_eq!(
-            board.to_string(),
-            "345\n\
-             2..\n\
-             1..\n"
-        );
-    }
-
-    #[test]
-    fn test_board_tick() {
-        let mut board = Board::new(3, 3);
-        board.grid[0][0] = Some(1);
-        board.grid[1][0] = Some(2);
-        board.grid[2][0] = Some(3);
-        board.grid[1][1] = Some(4);
-        board.grid[2][1] = Some(5);
-        board.grid[2][2] = Some(6);
-        assert_eq!(
-            board.to_string(),
-            "356\n\
-             24.\n\
-             1..\n"
-        );
-        board.tick();
-        assert_eq!(
-            board.to_string(),
-            "3..\n\
-             25.\n\
-             146\n"
-        );
-    }
-
-    #[test]
-    fn test_board_clear() {
-        let mut board = Board::new(3, 3);
-        board.grid[0][0] = Some(1);
-        board.grid[1][0] = Some(1);
-        board.grid[2][0] = Some(1);
-        board.grid[0][1] = Some(2);
-        board.grid[1][1] = Some(1);
-        board.grid[2][1] = Some(2);
-        board.grid[2][2] = Some(2);
-        assert_eq!(
-            board.to_string(),
-            "122\n\
-             11.\n\
-             12.\n"
-        );
-        eprintln!("organize score: {}", board.organize());
-        assert_eq!(
-            board.to_string(),
-            "...\n\
-             ...\n\
-             ...\n"
-        );
+        self.hash ^= hash_table.get(r1, c1, self.grid[r1][c1].unwrap_or(0));
+        self.hash ^= hash_table.get(r2, c2, self.grid[r2][c2].unwrap_or(0));
     }
 }

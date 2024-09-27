@@ -10,7 +10,7 @@ use rand::{
 };
 
 use crate::{
-    board::Board,
+    board::{Board, HashTable},
     io::{Input, Operation, Output, IO},
     util::visualize_score_transition,
 };
@@ -57,6 +57,7 @@ impl Solver for AnnealSolver {
         let mut t = 0;
         let mut rng = rand::thread_rng();
         let total_tl = 3000;
+        let hash_table = HashTable::new(self.input.h, self.input.w);
         while t < self.input.n {
             eprintln!("=== t = {} ===", t);
             let empty_size = board.empty_size();
@@ -123,7 +124,7 @@ impl Solver for AnnealSolver {
                         continue;
                     }
                     if let Some(jewel) = place_jewels.pop() {
-                        best_board.place(r, c, jewel);
+                        best_board.place(r, c, jewel, &hash_table);
                     } else {
                         break;
                     }
@@ -131,7 +132,7 @@ impl Solver for AnnealSolver {
             }
             let mut best_score = {
                 let mut cur_board = best_board.clone();
-                cur_board.organize()
+                cur_board.organize(&hash_table)
             };
             eprintln!("first_score = {}", best_score);
             let start_anneal = Instant::now();
@@ -165,7 +166,7 @@ impl Solver for AnnealSolver {
                         if next_board.get(r, c) == next_board.get(r2, c2) {
                             continue;
                         }
-                        next_board.swap(r, c, r2, c2);
+                        next_board.swap(r, c, r2, c2, &hash_table);
                     }
                     AnnealNeighbor::BigSwap => {
                         // shuffleして、最初の3<=k<=10.min(fill_size)個をswapする
@@ -180,7 +181,7 @@ impl Solver for AnnealSolver {
                             if next_board.get(r, c) == next_board.get(r2, c2) {
                                 continue;
                             }
-                            next_board.swap(r, c, r2, c2);
+                            next_board.swap(r, c, r2, c2, &hash_table);
                         }
                     }
                     AnnealNeighbor::Shuffle => {
@@ -195,14 +196,14 @@ impl Solver for AnnealSolver {
                             if next_board.get(r, c) == next_board.get(r2, c2) {
                                 continue;
                             }
-                            next_board.swap(r, c, r2, c2);
+                            next_board.swap(r, c, r2, c2, &hash_table);
                         }
                     }
                 }
 
                 let next_score = {
                     let mut next_board = next_board.clone();
-                    next_board.organize()
+                    next_board.organize(&hash_table)
                 };
 
                 let diff = next_score as i64 - cur_score as i64;
@@ -245,7 +246,7 @@ impl Solver for AnnealSolver {
                         if board.is_placable(r, c)
                             && best_board.get(r, c).is_some_and(|x| x == jewel)
                         {
-                            board.place(r, c, jewel);
+                            board.place(r, c, jewel, &hash_table);
                             operations.push(Operation {
                                 place: Some((r + 1, c + 1)),
                                 organize: false,
@@ -267,7 +268,7 @@ impl Solver for AnnealSolver {
 
             operations.last_mut().unwrap().organize = true;
 
-            score += board.organize();
+            score += board.organize(&hash_table);
             t = ti;
         }
 

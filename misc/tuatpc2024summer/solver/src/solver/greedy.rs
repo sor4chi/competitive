@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::{
-    board::Board,
+    board::{Board, HashTable},
     io::{Input, Operation, Output, IO},
 };
 
@@ -25,6 +25,7 @@ impl Solver for GreedySolver {
         let mut operations = vec![];
         let mut board = Board::new(self.input.h, self.input.w);
         let mut score = 0;
+        let hash_table = HashTable::new(self.input.h, self.input.w);
         for t in 0..self.input.n {
             let mut best_pos = None;
             let jewel = self.input.a[t];
@@ -65,7 +66,7 @@ impl Solver for GreedySolver {
             if let Some(best_pos) = best_pos {
                 place = Some((best_pos.0 + 1, best_pos.1 + 1));
 
-                board.place(best_pos.0, best_pos.1, jewel);
+                board.place(best_pos.0, best_pos.1, jewel, &hash_table);
             } else {
                 score += 100; // 捨てる
             }
@@ -73,7 +74,7 @@ impl Solver for GreedySolver {
             // すべて盤面が埋まっているか、もし最後のターンなら整理する
             let organize = board.is_all_filled() || t == self.input.n - 1;
             if organize {
-                score += board.organize();
+                score += board.organize(&hash_table);
             }
 
             operations.push(Operation { place, organize });
