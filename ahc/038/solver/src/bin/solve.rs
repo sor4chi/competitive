@@ -18,11 +18,14 @@ fn main() {
     eprintln!("[OneArmTree Solver]: {:?}", res2);
     let score2 = if !res2.1.is_empty() { i64::MAX } else { res2.0 };
 
-    if score1 < score2 {
-        output1.write();
-        eprintln!("FINAL SCORE: {}", score1);
-    } else {
-        output2.write();
-        eprintln!("FINAL SCORE: {}", score2);
-    }
+    // if score1 < score2 {
+    //     output1.write();
+    //     eprintln!("FINAL SCORE: {}", score1);
+    // } else {
+    //     output2.write();
+    //     eprintln!("FINAL SCORE: {}", score2);
+    // }
+
+    output2.write();
+    eprintln!("FINAL SCORE: {}", score2);
 }

@@ -3,6 +3,8 @@ use std::{
     time::Instant,
 };
 
+use rand::Rng;
+
 use crate::{
     game::{ArmNodeID, ArmTree, Direction, ROOT_ID},
     io::{Action, Input, Move, Operation, Output, Rotate, IO},
@@ -64,142 +66,165 @@ fn test_tornado_travel() {
 
 impl Solver for OneArmTreeSolver {
     fn solve(&mut self) -> Output {
-        let mut travel = tornado_travel(self.input.n);
-        travel.reverse();
-        let initial_pos = (self.input.n / 2, self.input.n / 2);
-        let mut arm_tree = ArmTree::new(initial_pos);
-        let mut cur_id = ROOT_ID;
-        let v = self.input.v.min(11);
-        for i in 0..v - 1 {
-            cur_id = arm_tree.add_arm(cur_id, v - i - 1);
-            // cur_id = arm_tree.add_arm(
-            //     cur_id,
-            //     (2i32.pow((v - i - 2) as u32) as usize).min(self.input.n / 2),
-            // );
-        }
-
-        let mut cur_board = self.input.s.clone();
-        let mut cur_targets = HashSet::new();
-        // もし既にself.input.sとself.input.tが一致しているものは埋めておく
-        for i in 0..self.input.n {
-            for j in 0..self.input.n {
-                if self.input.t[i][j] {
-                    if self.input.s[i][j] {
-                        cur_board[i][j] = false;
-                    } else {
-                        cur_targets.insert((i, j));
-                    }
-                }
-            }
-        }
-
-        let mut operations = vec![];
-        let mut is_carrying = false;
-        let mut cur_arm_tree = arm_tree;
-        let mut cur_move_to = Move::Stay;
-        let mut cur_center = initial_pos;
-        let mut time_limit_exceeded = false;
         let start = Instant::now();
         let tl = 2900;
+        let mut best_output = None;
+        let mut rng = rand::thread_rng();
 
-        'outer: while !cur_targets.is_empty() {
-            loop {
-                // DFSで探索
-                let mut stack = vec![(cur_arm_tree.clone(), vec![])];
-                let mut best_rotates = None;
-                let mut i = 0;
-                'rotates_dfs: while let Some((arm_tree, rotates)) = stack.pop() {
-                    if start.elapsed().as_millis() > tl {
-                        time_limit_exceeded = true;
-                        break 'outer;
+        let mut iter = 0;
+        'outer: loop {
+            iter += 1;
+
+            let mut travel = tornado_travel(self.input.n);
+            travel.reverse();
+            let initial_pos = (self.input.n / 2, self.input.n / 2);
+            let mut arm_tree = ArmTree::new(initial_pos);
+            let mut cur_id = ROOT_ID;
+            let v = self.input.v.min(11);
+            for i in 0..v - 1 {
+                // cur_id = arm_tree.add_arm(cur_id, v - i - 1);
+                // cur_id = arm_tree.add_arm(
+                //     cur_id,
+                //     (2i32.pow((v - i - 2) as u32) as usize).min(self.input.n / 2),
+                // );
+                // lengthをランダムに決める
+                cur_id = arm_tree.add_arm(cur_id, rng.gen_range(1..=(self.input.n / 2)));
+            }
+
+            let mut cur_board = self.input.s.clone();
+            let mut cur_targets = HashSet::new();
+            // もし既にself.input.sとself.input.tが一致しているものは埋めておく
+            for i in 0..self.input.n {
+                for j in 0..self.input.n {
+                    if self.input.t[i][j] {
+                        if self.input.s[i][j] {
+                            cur_board[i][j] = false;
+                        } else {
+                            cur_targets.insert((i, j));
+                        }
                     }
-                    i += 1;
-                    // arm_treeのleavesがcur_boardにかぶっていたらそれをbestとして終了
-                    for leaf_id in &arm_tree.leaves {
-                        let (x, y) = arm_tree.tree_pos[leaf_id];
-                        if x < 0 || y < 0 || x >= self.input.n as i32 || y >= self.input.n as i32 {
-                            continue;
+                }
+            }
+
+            let mut operations = vec![];
+            let mut is_carrying = false;
+            let mut cur_arm_tree = arm_tree;
+            let mut cur_move_to = Move::Stay;
+            let mut cur_center = initial_pos;
+
+            while !cur_targets.is_empty() {
+                loop {
+                    // DFSで探索
+                    let mut stack = vec![(cur_arm_tree.clone(), vec![])];
+                    let mut best_rotates = None;
+                    let mut i = 0;
+                    'rotates_dfs: while let Some((arm_tree, rotates)) = stack.pop() {
+                        if start.elapsed().as_millis() > tl {
+                            break 'outer;
                         }
-                        if !is_carrying && cur_board[x as usize][y as usize] {
-                            cur_board[x as usize][y as usize] = false;
-                            cur_arm_tree = arm_tree;
-                            is_carrying = true;
-                            best_rotates = Some(rotates);
-                            break 'rotates_dfs;
+                        i += 1;
+                        // arm_treeのleavesがcur_boardにかぶっていたらそれをbestとして終了
+                        for leaf_id in &arm_tree.leaves {
+                            let (x, y) = arm_tree.tree_pos[leaf_id];
+                            if x < 0
+                                || y < 0
+                                || x >= self.input.n as i32
+                                || y >= self.input.n as i32
+                            {
+                                continue;
+                            }
+                            if !is_carrying && cur_board[x as usize][y as usize] {
+                                cur_board[x as usize][y as usize] = false;
+                                cur_arm_tree = arm_tree;
+                                is_carrying = true;
+                                best_rotates = Some(rotates);
+                                break 'rotates_dfs;
+                            }
+                            if is_carrying && cur_targets.contains(&(x as usize, y as usize)) {
+                                cur_targets.remove(&(x as usize, y as usize));
+                                cur_arm_tree = arm_tree;
+                                is_carrying = false;
+                                best_rotates = Some(rotates);
+                                break 'rotates_dfs;
+                            }
                         }
-                        if is_carrying && cur_targets.contains(&(x as usize, y as usize)) {
-                            cur_targets.remove(&(x as usize, y as usize));
-                            cur_arm_tree = arm_tree;
-                            is_carrying = false;
-                            best_rotates = Some(rotates);
-                            break 'rotates_dfs;
-                        }
-                    }
-                    let cur_id = ArmNodeID(rotates.len());
-                    if let Some((child, _)) = arm_tree.tree.get(&cur_id).and_then(|v| v.first()) {
-                        for r in [Rotate::Left, Rotate::Right] {
-                            let mut new_arm_tree = arm_tree.clone();
+                        let cur_id = ArmNodeID(rotates.len());
+                        if let Some((child, _)) = arm_tree.tree.get(&cur_id).and_then(|v| v.first())
+                        {
+                            for r in [Rotate::Left, Rotate::Right] {
+                                let mut new_arm_tree = arm_tree.clone();
+                                let mut new_rotates = rotates.clone();
+                                new_rotates.push(r);
+                                new_arm_tree.rotate(*child, r);
+                                stack.push((new_arm_tree, new_rotates));
+                            }
+                            let new_arm_tree = arm_tree.clone();
                             let mut new_rotates = rotates.clone();
-                            new_rotates.push(r);
-                            new_arm_tree.rotate(*child, r);
+                            new_rotates.push(Rotate::Stay);
                             stack.push((new_arm_tree, new_rotates));
                         }
-                        let new_arm_tree = arm_tree.clone();
-                        let mut new_rotates = rotates.clone();
-                        new_rotates.push(Rotate::Stay);
-                        stack.push((new_arm_tree, new_rotates));
                     }
+                    // eprintln!("i: {}", i);
+                    // eprintln!("best_rotates: {:?}", best_rotates);
+                    if best_rotates.is_none() {
+                        break;
+                    }
+                    let mut best_rotates = best_rotates.unwrap();
+                    // pad with Stay
+                    while best_rotates.len() < v - 1 {
+                        best_rotates.push(Rotate::Stay);
+                    }
+                    let mut actions = vec![Action::Stay; v - 1];
+                    actions.push(Action::PickOrRelease);
+                    let op = Operation {
+                        move_to: cur_move_to,
+                        rotates: best_rotates,
+                        actions,
+                    };
+                    cur_move_to = Move::Stay; // 最初だけ移動を引き継ぐため、使ったらリセット
+                    operations.push(op);
                 }
-                // eprintln!("i: {}", i);
-                // eprintln!("best_rotates: {:?}", best_rotates);
-                if best_rotates.is_none() {
+
+                if cur_move_to != Move::Stay {
+                    let op = Operation {
+                        move_to: cur_move_to,
+                        rotates: vec![Rotate::Stay; v - 1],
+                        actions: vec![Action::Stay; v],
+                    };
+                    operations.push(op);
+                }
+
+                // cur_centerからd方向に動かし、visitedにない場所がみつかればそこに向かう
+                if travel.is_empty() {
                     break;
                 }
-                let mut best_rotates = best_rotates.unwrap();
-                // pad with Stay
-                while best_rotates.len() < v - 1 {
-                    best_rotates.push(Rotate::Stay);
+                let dir = travel.pop().unwrap();
+                cur_move_to = Move::Shift(dir);
+                let d = dir.get_d();
+                let new_center = (cur_center.0 as i32 + d.0, cur_center.1 as i32 + d.1);
+                cur_center = (new_center.0 as usize, new_center.1 as usize);
+                cur_arm_tree.all_shift(d);
+            }
+
+            let output = Output {
+                flatten_tree: cur_arm_tree.flatten(),
+                initial_pos,
+                operations,
+            };
+
+            if best_output.is_none() {
+                best_output = Some(output);
+            } else {
+                let best_score = best_output.as_ref().unwrap().operations.len();
+                let cur_score = output.operations.len();
+                if cur_score < best_score {
+                    best_output = Some(output);
                 }
-                let mut actions = vec![Action::Stay; v - 1];
-                actions.push(Action::PickOrRelease);
-                let op = Operation {
-                    move_to: cur_move_to,
-                    rotates: best_rotates,
-                    actions,
-                };
-                cur_move_to = Move::Stay; // 最初だけ移動を引き継ぐため、使ったらリセット
-                operations.push(op);
             }
-
-            if cur_move_to != Move::Stay {
-                let op = Operation {
-                    move_to: cur_move_to,
-                    rotates: vec![Rotate::Stay; v - 1],
-                    actions: vec![Action::Stay; v],
-                };
-                operations.push(op);
-            }
-
-            // cur_centerからd方向に動かし、visitedにない場所がみつかればそこに向かう
-            if travel.is_empty() {
-                break;
-            }
-            let dir = travel.pop().unwrap();
-            cur_move_to = Move::Shift(dir);
-            let d = dir.get_d();
-            let new_center = (cur_center.0 as i32 + d.0, cur_center.1 as i32 + d.1);
-            cur_center = (new_center.0 as usize, new_center.1 as usize);
-            cur_arm_tree.all_shift(d);
         }
 
-        if time_limit_exceeded {
-            eprintln!("[OneArmTree Solver] timeout exceeded",);
-        }
+        eprintln!("iter: {}", iter);
 
-        Output {
-            flatten_tree: cur_arm_tree.flatten(),
-            initial_pos,
-            operations,
-        }
+        best_output.unwrap()
     }
 }
