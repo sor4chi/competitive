@@ -372,6 +372,7 @@ dependencies = [
  "itertools",
  "proconio",
  "rand",
+ "rand_chacha",
  "rand_pcg",
  "rustc-hash",
  "rustsourcebundler",

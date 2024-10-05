@@ -4,6 +4,7 @@ use proconio::input;
 
 use crate::game::{ArmNodeID, ArmTree, Direction};
 
+#[derive(Clone)]
 pub struct Input {
     pub n: usize,
     pub m: usize,
@@ -12,7 +13,7 @@ pub struct Input {
     pub t: Vec<Vec<bool>>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct IO {}
 
 impl IO {
@@ -96,6 +97,24 @@ pub struct Operation {
     pub actions: Vec<Action>,
 }
 
+impl Display for Operation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}{}",
+            self.move_to,
+            self.rotates
+                .iter()
+                .map(|r| r.to_string())
+                .collect::<String>(),
+            self.actions
+                .iter()
+                .map(|a| a.to_string())
+                .collect::<String>()
+        )
+    }
+}
+
 pub struct Output {
     pub flatten_tree: Vec<(ArmNodeID, usize)>,
     pub initial_pos: (usize, usize),
@@ -111,12 +130,7 @@ impl Output {
         println!("{} {}", self.initial_pos.0, self.initial_pos.1);
 
         for op in &self.operations {
-            println!(
-                "{}{}{}",
-                op.move_to,
-                op.rotates.iter().map(|r| r.to_string()).collect::<String>(),
-                op.actions.iter().map(|a| a.to_string()).collect::<String>()
-            );
+            println!("{}", op);
         }
     }
 }

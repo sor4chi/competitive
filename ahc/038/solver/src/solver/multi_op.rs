@@ -611,6 +611,7 @@ impl Solver for MultiOPSolver {
                 break;
             }
         }
+
         Output {
             flatten_tree,
             initial_pos,
