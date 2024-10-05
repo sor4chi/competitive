@@ -36,7 +36,7 @@ fn tornado_travel(n: usize) -> Vec<Direction> {
     let mut l = 1;
     let mut c = 0;
     let mut i = 0;
-    while i < n * n {
+    while i < n * n - 1 {
         res.push(DIRS[d as usize]);
         let n = DIRS[d as usize].get_d();
         x = (x as i32 + n.0) as usize;
@@ -69,11 +69,12 @@ impl Solver for OneArmTreeSolver {
         let initial_pos = (self.input.n / 2, self.input.n / 2);
         let mut arm_tree = ArmTree::new(initial_pos);
         let mut cur_id = ROOT_ID;
-        for i in 0..self.input.v - 1 {
-            cur_id = arm_tree.add_arm(cur_id, self.input.v - i - 1);
+        let v = self.input.v.min(11);
+        for i in 0..v - 1 {
+            cur_id = arm_tree.add_arm(cur_id, v - i - 1);
             // cur_id = arm_tree.add_arm(
             //     cur_id,
-            //     (2i32.pow((self.input.v - i - 2) as u32) as usize).min(self.input.n / 2),
+            //     (2i32.pow((v - i - 2) as u32) as usize).min(self.input.n / 2),
             // );
         }
 
@@ -91,14 +92,15 @@ impl Solver for OneArmTreeSolver {
                 }
             }
         }
+
         let mut operations = vec![];
         let mut is_carrying = false;
         let mut cur_arm_tree = arm_tree;
         let mut cur_move_to = Move::Stay;
         let mut cur_center = initial_pos;
         let mut time_limit_exceeded = false;
-        let mut start = Instant::now();
-        let mut tl = 2900;
+        let start = Instant::now();
+        let tl = 2900;
 
         'outer: while !cur_targets.is_empty() {
             loop {
@@ -108,7 +110,7 @@ impl Solver for OneArmTreeSolver {
                 let mut i = 0;
                 'rotates_dfs: while let Some((arm_tree, rotates)) = stack.pop() {
                     if start.elapsed().as_millis() > tl {
-                        time_limit_exceeded = false;
+                        time_limit_exceeded = true;
                         break 'outer;
                     }
                     i += 1;
@@ -155,10 +157,10 @@ impl Solver for OneArmTreeSolver {
                 }
                 let mut best_rotates = best_rotates.unwrap();
                 // pad with Stay
-                while best_rotates.len() < self.input.v - 1 {
+                while best_rotates.len() < v - 1 {
                     best_rotates.push(Rotate::Stay);
                 }
-                let mut actions = vec![Action::Stay; self.input.v - 1];
+                let mut actions = vec![Action::Stay; v - 1];
                 actions.push(Action::PickOrRelease);
                 let op = Operation {
                     move_to: cur_move_to,
@@ -166,15 +168,14 @@ impl Solver for OneArmTreeSolver {
                     actions,
                 };
                 cur_move_to = Move::Stay; // 最初だけ移動を引き継ぐため、使ったらリセット
-                cur_board[initial_pos.0][initial_pos.1] = false;
                 operations.push(op);
             }
 
             if cur_move_to != Move::Stay {
                 let op = Operation {
                     move_to: cur_move_to,
-                    rotates: vec![Rotate::Stay; self.input.v - 1],
-                    actions: vec![Action::Stay; self.input.v],
+                    rotates: vec![Rotate::Stay; v - 1],
+                    actions: vec![Action::Stay; v],
                 };
                 operations.push(op);
             }
@@ -189,6 +190,10 @@ impl Solver for OneArmTreeSolver {
             let new_center = (cur_center.0 as i32 + d.0, cur_center.1 as i32 + d.1);
             cur_center = (new_center.0 as usize, new_center.1 as usize);
             cur_arm_tree.all_shift(d);
+        }
+
+        if time_limit_exceeded {
+            eprintln!("[OneArmTree Solver] timeout exceeded",);
         }
 
         Output {
