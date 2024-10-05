@@ -61,7 +61,6 @@ impl Direction {
 impl Solver for MultiOPSolver {
     fn solve(&mut self) -> Output {
         let initial_pos = (0, 0);
-        // sからtへの移動をOperationに変換
         let mut arm_tree = ArmTree::new((0, 0));
         for i in 1..self.input.v {
             arm_tree.add_arm(ROOT_ID, i);
@@ -70,7 +69,14 @@ impl Solver for MultiOPSolver {
         let mut cur_arm_holdings = vec![false; self.input.v];
         let mut cur_s = self.input.s.clone();
         let mut cur_t = self.input.t.clone();
-        // sとtが一致する場所はもうクリアしたことにする
+        let mut cur_filled = vec![vec![false; self.input.n]; self.input.n];
+        for i in 0..self.input.n {
+            for j in 0..self.input.n {
+                if cur_s[i][j] {
+                    cur_filled[i][j] = true;
+                }
+            }
+        }
         for i in 0..self.input.n {
             for j in 0..self.input.n {
                 if cur_s[i][j] && cur_t[i][j] {
@@ -87,103 +93,79 @@ impl Solver for MultiOPSolver {
         let full_right_rotates = vec![Rotate::Right; self.input.v - 1];
         let full_stay_actions = vec![Action::Stay; self.input.v];
         let mut tree_width = self.input.v;
-
         loop {
-            let mut best_source_match_pos = None;
-            let mut best_source_match_score = 0;
-            let mut best_source_match_dir = None;
-            // cur_sの横方向の順方向にtree_width-1個の部分列で最も一致するものを探す
+            let mut source_match_poses = vec![];
             for i in 0..self.input.n {
                 for j in 0..self.input.n {
-                    let mut score = 0;
+                    let mut fillable_count = 0;
                     for k in 1..tree_width {
                         if j + k >= self.input.n {
                             break;
                         }
                         if cur_s[i][j + k] && !cur_arm_holdings[k] {
-                            score += 1;
+                            fillable_count += 1;
                         }
                     }
-                    if score > best_source_match_score {
-                        best_source_match_score = score;
-                        best_source_match_pos = Some((i, j));
-                        best_source_match_dir = Some(Direction::Right);
+                    if fillable_count > 0 {
+                        source_match_poses.push((i, j, Direction::Right, fillable_count));
                     }
-                }
-            }
-            // cur_sの縦方向の順方向にtree_width-1個の部分列で最も一致するものを探す
-            for i in 0..self.input.n {
-                for j in 0..self.input.n {
-                    let mut score = 0;
+                    fillable_count = 0;
                     for k in 1..tree_width {
                         if i + k >= self.input.n {
                             break;
                         }
                         if cur_s[i + k][j] && !cur_arm_holdings[k] {
-                            score += 1;
+                            fillable_count += 1;
                         }
                     }
-                    if score > best_source_match_score {
-                        best_source_match_score = score;
-                        best_source_match_pos = Some((i, j));
-                        best_source_match_dir = Some(Direction::Down);
+                    if fillable_count > 0 {
+                        source_match_poses.push((i, j, Direction::Down, fillable_count));
                     }
-                }
-            }
-            // cur_sの横方向の逆方向にtree_width-1個の部分列で最も一致するものを探す
-            for i in 0..self.input.n {
-                for j in 0..self.input.n {
-                    let mut score = 0;
+                    fillable_count = 0;
                     for k in 1..tree_width {
                         if (j as i32 - k as i32) < 0 {
                             break;
                         }
                         if cur_s[i][j - k] && !cur_arm_holdings[k] {
-                            score += 1;
+                            fillable_count += 1;
                         }
                     }
-                    if score > best_source_match_score {
-                        best_source_match_score = score;
-                        best_source_match_pos = Some((i, j));
-                        best_source_match_dir = Some(Direction::Left);
+                    if fillable_count > 0 {
+                        source_match_poses.push((i, j, Direction::Left, fillable_count));
                     }
-                }
-            }
-            // cur_sの縦方向の逆方向にtree_width-1個の部分列で最も一致するものを探す
-            for i in 0..self.input.n {
-                for j in 0..self.input.n {
-                    let mut score = 0;
+                    fillable_count = 0;
                     for k in 1..tree_width {
                         if (i as i32 - k as i32) < 0 {
                             break;
                         }
                         if cur_s[i - k][j] && !cur_arm_holdings[k] {
-                            score += 1;
+                            fillable_count += 1;
                         }
                     }
-                    if score > best_source_match_score {
-                        best_source_match_score = score;
-                        best_source_match_pos = Some((i, j));
-                        best_source_match_dir = Some(Direction::Up);
+                    if fillable_count > 0 {
+                        source_match_poses.push((i, j, Direction::Up, fillable_count));
                     }
                 }
             }
-
+            source_match_poses.sort_by_key(|(i, j, dir, fillable_count)| {
+                let dx = *i as i32 - cur_pos.0 as i32;
+                let dy = *j as i32 - cur_pos.1 as i32;
+                let dist = dx.unsigned_abs() + dy.unsigned_abs();
+                (-(*fillable_count), dist)
+            });
+            let best_source_match_pos = source_match_poses.first().map(|(i, j, dir, _)| (*i, *j));
+            let best_source_match_dir = source_match_poses.first().map(|(_, _, dir, _)| *dir);
             if let Some(next_pos) = best_source_match_pos {
                 let mut current_operations = vec![];
                 let need_rotates = {
-                    // 必要な回転数を計算
-                    // cur_dirとbest_source_match_dirの差分を計算
                     let mut need_rotates_right = vec![];
                     let mut right_trial_dir = cur_dir;
-                    // 右回転の場合
                     while right_trial_dir != best_source_match_dir.unwrap() {
                         need_rotates_right.push(Rotate::Right);
                         right_trial_dir = right_trial_dir.rotate_right();
                     }
                     let mut need_rotates_left = vec![];
                     let mut left_trial_dir = cur_dir;
-                    // 左回転の場合
                     while left_trial_dir != best_source_match_dir.unwrap() {
                         need_rotates_left.push(Rotate::Left);
                         left_trial_dir = left_trial_dir.rotate_left();
@@ -194,14 +176,11 @@ impl Solver for MultiOPSolver {
                         need_rotates_left
                     }
                 };
-
-                // arm_treeを回転
                 for rotate in &need_rotates {
                     for id in arm_tree.leaves.clone() {
                         arm_tree.rotate(id, *rotate);
                     }
                 }
-
                 let prev_pos = cur_pos;
                 while cur_pos.0 != next_pos.0 {
                     if cur_pos.0 < next_pos.0 {
@@ -255,25 +234,17 @@ impl Solver for MultiOPSolver {
                         actions[id.0] = Action::PickOrRelease;
                         cur_arm_holdings[id.0] = true;
                         cur_s[pos.0 as usize][pos.1 as usize] = false;
+                        cur_filled[pos.0 as usize][pos.1 as usize] = false;
                     }
                 }
-
-                current_operations.push(Operation {
-                    move_to: Move::Stay,
-                    rotates: full_stay_rotates.clone(),
-                    actions,
-                });
-
                 for i in 0..need_rotates.len() {
                     if current_operations.len() > i {
-                        //current_operationsのi番目の要素をneed_rotates[i]のrotateに変更
                         current_operations[i].rotates = match need_rotates[i] {
                             Rotate::Left => full_left_rotates.clone(),
                             Rotate::Right => full_right_rotates.clone(),
                             Rotate::Stay => full_stay_rotates.clone(),
                         };
                     } else {
-                        //current_operationsに要素が足りない場合は追加
                         current_operations.push(Operation {
                             move_to: Move::Stay,
                             rotates: match need_rotates[i] {
@@ -285,107 +256,91 @@ impl Solver for MultiOPSolver {
                         });
                     }
                 }
-
+                if !current_operations.is_empty() {
+                    current_operations.last_mut().unwrap().actions = actions;
+                } else {
+                    current_operations.push(Operation {
+                        move_to: Move::Stay,
+                        rotates: full_stay_rotates.clone(),
+                        actions,
+                    });
+                }
                 cur_pos = next_pos;
                 cur_dir = best_source_match_dir.unwrap();
                 operations.append(&mut current_operations);
             }
-
-            let mut best_target_match_pos = None;
-            let mut best_target_match_score = 0;
-            let mut best_target_match_dir = None;
-            // cur_tの横方向の順方向にtree_width-1個の部分列で最も一致するものを探す
+            let mut target_match_poses = vec![];
             for i in 0..self.input.n {
                 for j in 0..self.input.n {
-                    let mut score = 0;
+                    let mut fillable_count = 0;
                     for k in 1..tree_width {
                         if j + k >= self.input.n {
                             break;
                         }
                         if cur_t[i][j + k] && cur_arm_holdings[k] {
-                            score += 1;
+                            fillable_count += 1;
                         }
                     }
-                    if score > best_target_match_score {
-                        best_target_match_score = score;
-                        best_target_match_pos = Some((i, j));
-                        best_target_match_dir = Some(Direction::Right);
+                    if fillable_count > 0 {
+                        target_match_poses.push((i, j, Direction::Right, fillable_count));
                     }
-                }
-            }
-            // cur_tの縦方向の順方向にtree_width-1個の部分列で最も一致するものを探す
-            for i in 0..self.input.n {
-                for j in 0..self.input.n {
-                    let mut score = 0;
+                    fillable_count = 0;
                     for k in 1..tree_width {
                         if i + k >= self.input.n {
                             break;
                         }
                         if cur_t[i + k][j] && cur_arm_holdings[k] {
-                            score += 1;
+                            fillable_count += 1;
                         }
                     }
-                    if score > best_target_match_score {
-                        best_target_match_score = score;
-                        best_target_match_pos = Some((i, j));
-                        best_target_match_dir = Some(Direction::Down);
+                    if fillable_count > 0 {
+                        target_match_poses.push((i, j, Direction::Down, fillable_count));
                     }
-                }
-            }
-            // cur_tの横方向の逆方向にtree_width-1個の部分列で最も一致するものを探す
-            for i in 0..self.input.n {
-                for j in 0..self.input.n {
-                    let mut score = 0;
+                    fillable_count = 0;
                     for k in 1..tree_width {
                         if (j as i32 - k as i32) < 0 {
                             break;
                         }
                         if cur_t[i][j - k] && cur_arm_holdings[k] {
-                            score += 1;
+                            fillable_count += 1;
                         }
                     }
-                    if score > best_target_match_score {
-                        best_target_match_score = score;
-                        best_target_match_pos = Some((i, j));
-                        best_target_match_dir = Some(Direction::Left);
+                    if fillable_count > 0 {
+                        target_match_poses.push((i, j, Direction::Left, fillable_count));
                     }
-                }
-            }
-            // cur_tの縦方向の逆方向にtree_width-1個の部分列で最も一致するものを探す
-            for i in 0..self.input.n {
-                for j in 0..self.input.n {
-                    let mut score = 0;
+                    fillable_count = 0;
                     for k in 1..tree_width {
                         if (i as i32 - k as i32) < 0 {
                             break;
                         }
                         if cur_t[i - k][j] && cur_arm_holdings[k] {
-                            score += 1;
+                            fillable_count += 1;
                         }
                     }
-                    if score > best_target_match_score {
-                        best_target_match_score = score;
-                        best_target_match_pos = Some((i, j));
-                        best_target_match_dir = Some(Direction::Up);
+                    if fillable_count > 0 {
+                        target_match_poses.push((i, j, Direction::Up, fillable_count));
                     }
                 }
             }
-
+            target_match_poses.sort_by_key(|(i, j, dir, fillable_count)| {
+                let dx = *i as i32 - cur_pos.0 as i32;
+                let dy = *j as i32 - cur_pos.1 as i32;
+                let dist = dx.unsigned_abs() + dy.unsigned_abs();
+                (-(*fillable_count), dist)
+            });
+            let best_target_match_pos = target_match_poses.first().map(|(i, j, dir, _)| (*i, *j));
+            let best_target_match_dir = target_match_poses.first().map(|(_, _, dir, _)| *dir);
             if let Some(next_pos) = best_target_match_pos {
                 let mut current_operations = vec![];
                 let need_rotates = {
-                    // 必要な回転数を計算
-                    // cur_dirとbest_target_match_dirの差分を計算
                     let mut need_rotates_right = vec![];
                     let mut right_trial_dir = cur_dir;
-                    // 右回転の場合
                     while right_trial_dir != best_target_match_dir.unwrap() {
                         need_rotates_right.push(Rotate::Right);
                         right_trial_dir = right_trial_dir.rotate_right();
                     }
                     let mut need_rotates_left = vec![];
                     let mut left_trial_dir = cur_dir;
-                    // 左回転の場合
                     while left_trial_dir != best_target_match_dir.unwrap() {
                         need_rotates_left.push(Rotate::Left);
                         left_trial_dir = left_trial_dir.rotate_left();
@@ -396,14 +351,11 @@ impl Solver for MultiOPSolver {
                         need_rotates_left
                     }
                 };
-
-                // arm_treeを回転
                 for rotate in &need_rotates {
                     for id in arm_tree.leaves.clone() {
                         arm_tree.rotate(id, *rotate);
                     }
                 }
-
                 let prev_pos = cur_pos;
                 while cur_pos.0 != next_pos.0 {
                     if cur_pos.0 < next_pos.0 {
@@ -443,7 +395,6 @@ impl Solver for MultiOPSolver {
                     next_pos.0 as i32 - prev_pos.0 as i32,
                     next_pos.1 as i32 - prev_pos.1 as i32,
                 ));
-
                 let mut actions = full_stay_actions.clone();
                 for id in &arm_tree.leaves {
                     let pos = arm_tree.tree_pos[id];
@@ -458,24 +409,17 @@ impl Solver for MultiOPSolver {
                         actions[id.0] = Action::PickOrRelease;
                         cur_arm_holdings[id.0] = false;
                         cur_t[pos.0 as usize][pos.1 as usize] = false;
+                        cur_filled[pos.0 as usize][pos.1 as usize] = true;
                     }
                 }
-                current_operations.push(Operation {
-                    move_to: Move::Stay,
-                    rotates: full_stay_rotates.clone(),
-                    actions,
-                });
-
                 for i in 0..need_rotates.len() {
                     if current_operations.len() > i {
-                        //current_operationsのi番目の要素をneed_rotates[i]のrotateに変更
                         current_operations[i].rotates = match need_rotates[i] {
                             Rotate::Left => full_left_rotates.clone(),
                             Rotate::Right => full_right_rotates.clone(),
                             Rotate::Stay => full_stay_rotates.clone(),
                         };
                     } else {
-                        //current_operationsに要素が足りない場合は追加
                         current_operations.push(Operation {
                             move_to: Move::Stay,
                             rotates: match need_rotates[i] {
@@ -487,12 +431,19 @@ impl Solver for MultiOPSolver {
                         });
                     }
                 }
-
+                if !current_operations.is_empty() {
+                    current_operations.last_mut().unwrap().actions = actions;
+                } else {
+                    current_operations.push(Operation {
+                        move_to: Move::Stay,
+                        rotates: full_stay_rotates.clone(),
+                        actions,
+                    });
+                }
                 cur_pos = next_pos;
                 cur_dir = best_target_match_dir.unwrap();
                 operations.append(&mut current_operations);
             }
-
             if best_source_match_pos.is_none() && best_target_match_pos.is_none() {
                 let mut all_t_false = true;
                 for i in 0..self.input.n {
@@ -510,13 +461,9 @@ impl Solver for MultiOPSolver {
                         }
                     }
                 }
-
                 if !all_t_false || !all_s_false {
-                    // 今持っている物を離したい
-                    // 持っているものを離せる最短距離に移動
                     let mut queue = VecDeque::new();
                     let mut visited = HashSet::new();
-                    // 持っているものの今の座標を計算
                     let holding_poses = {
                         let mut holding_poses = vec![];
                         for id in &arm_tree.leaves {
@@ -531,19 +478,22 @@ impl Solver for MultiOPSolver {
                     visited.insert(cur_pos);
                     let mut best_pos = None;
                     while let Some((pos, holding_poses)) = queue.pop_front() {
-                        // もしholding_posesの全ての要素がcur_tでない場所にあれば終了、best_posを更新
-                        let mut all_t = true;
+                        let mut is_ok = true;
                         for holding_pos in &holding_poses {
                             if holding_pos.0 < 0
                                 || holding_pos.1 < 0
                                 || holding_pos.0 >= self.input.n as i32
                                 || holding_pos.1 >= self.input.n as i32
-                                || cur_t[holding_pos.0 as usize][holding_pos.1 as usize]
                             {
-                                all_t = false;
+                                is_ok = false;
+                                break;
+                            }
+                            if cur_filled[holding_pos.0 as usize][holding_pos.1 as usize] {
+                                is_ok = false;
+                                break;
                             }
                         }
-                        if all_t {
+                        if is_ok {
                             best_pos = Some(pos);
                             break;
                         }
@@ -574,14 +524,11 @@ impl Solver for MultiOPSolver {
                             queue.push_back((next_pos, next_holding_poses));
                         }
                     }
-
                     if best_pos.is_none() {
                         eprintln!("[WARNING]: unexpected error");
                         break;
                     }
                     let best_pos = best_pos.unwrap();
-
-                    // cur_posからbest_posまで移動
                     let mut current_operations = vec![];
                     let prev_pos = cur_pos;
                     while best_pos.0 != cur_pos.0 {
@@ -636,10 +583,9 @@ impl Solver for MultiOPSolver {
                             actions[id.0] = Action::PickOrRelease;
                             cur_arm_holdings[id.0] = false;
                             cur_s[pos.0 as usize][pos.1 as usize] = true;
+                            cur_filled[pos.0 as usize][pos.1 as usize] = true;
                         }
                     }
-
-                    // leavesの中で一番長いものを削除
                     let mut max_length = 0;
                     let mut max_id = None;
                     for id in arm_tree.leaves.clone() {
@@ -650,27 +596,21 @@ impl Solver for MultiOPSolver {
                     }
                     if let Some(max_id) = max_id {
                         arm_tree.remove_arm(max_id);
-                        // tree_widthを更新
                         if tree_width > 2 {
                             tree_width -= 1;
                         }
                     }
-
                     current_operations.push(Operation {
                         move_to: Move::Stay,
                         rotates: full_stay_rotates.clone(),
                         actions,
                     });
-
                     operations.append(&mut current_operations);
-
                     continue;
                 }
-
                 break;
             }
         }
-
         Output {
             flatten_tree,
             initial_pos,
