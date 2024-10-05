@@ -73,6 +73,19 @@ impl ArmTree {
         id
     }
 
+    pub fn remove_arm(&mut self, arm_id: ArmNodeID) {
+        let parent = self.tree_rev[&arm_id];
+        let mut children = self.tree.remove(&parent).unwrap();
+        children.retain(|(child, _)| *child != arm_id);
+        self.tree.insert(parent, children);
+        self.tree_rev.remove(&arm_id);
+        self.tree_pos.remove(&arm_id);
+        self.leaves.remove(&arm_id);
+        if self.tree[&parent].is_empty() {
+            self.leaves.insert(parent);
+        }
+    }
+
     pub fn rotate(&mut self, rotate_id: ArmNodeID, rotate: Rotate) {
         // rotate_idよりも深い部分を、rotate_idを中心に回転する
         let parent_id = self.tree_rev[&rotate_id];
