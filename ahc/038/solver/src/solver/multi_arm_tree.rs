@@ -3,23 +3,24 @@ use std::{
     time::Instant,
 };
 
-use rand::Rng;
+use rand::{rngs::StdRng, Rng};
 
 use crate::{
     game::{ArmNodeID, ArmTree, Direction, ROOT_ID},
     io::{Action, Input, Move, Operation, Output, Rotate, IO},
+    tool::compute_score,
 };
 
 use super::Solver;
 
-pub struct OneArmTreeSolver {
+pub struct MultiArmTreeSolver {
     io: IO,
     input: Input,
 }
 
-impl OneArmTreeSolver {
+impl MultiArmTreeSolver {
     pub fn new(io: IO, input: Input) -> Self {
-        OneArmTreeSolver { io, input }
+        MultiArmTreeSolver { io, input }
     }
 }
 
@@ -64,12 +65,14 @@ fn test_tornado_travel() {
     eprintln!("{:?}", res);
 }
 
-impl Solver for OneArmTreeSolver {
+impl Solver for MultiArmTreeSolver {
     fn solve(&mut self) -> Output {
         let start = Instant::now();
         let tl = 2900;
         let mut best_output = None;
-        let mut rng = rand::thread_rng();
+        let mut best_score = i64::MAX;
+        let mut seed = [0; 32];
+        let mut rng: StdRng = rand::SeedableRng::from_seed(seed);
 
         let mut iter = 0;
         'outer: loop {
@@ -78,17 +81,20 @@ impl Solver for OneArmTreeSolver {
             let mut travel = tornado_travel(self.input.n);
             travel.reverse();
             let initial_pos = (self.input.n / 2, self.input.n / 2);
+
+            let mut arms = vec![];
+            // split v
             let mut arm_tree = ArmTree::new(initial_pos);
             let mut cur_id = ROOT_ID;
-            let v = self.input.v.min(11);
-            for i in 0..v - 1 {
-                // cur_id = arm_tree.add_arm(cur_id, v - i - 1);
-                // cur_id = arm_tree.add_arm(
-                //     cur_id,
-                //     (2i32.pow((v - i - 2) as u32) as usize).min(self.input.n / 2),
-                // );
-                // lengthをランダムに決める
-                cur_id = arm_tree.add_arm(cur_id, rng.gen_range(1..=(self.input.n / 2)));
+            let tv = self.input.v - 1;
+            let vs = vec![tv / 2, tv - tv / 2];
+            for v in vs {
+                for i in 0..v {
+                    cur_id = arm_tree.add_arm(cur_id, rng.gen_range(1..=(self.input.n / 2)));
+                }
+                arms.push(arm_tree);
+                arm_tree = ArmTree::new(initial_pos);
+                cur_id = ROOT_ID;
             }
 
             let mut cur_board = self.input.s.clone();
@@ -107,89 +113,118 @@ impl Solver for OneArmTreeSolver {
             }
 
             let mut operations = vec![];
-            let mut is_carrying = false;
-            let mut cur_arm_tree = arm_tree;
-            let mut cur_move_to = Move::Stay;
+            let mut cur_arms = arms;
+            let mut is_carryings = vec![false; cur_arms.len()];
             let mut cur_center = initial_pos;
 
             while !cur_targets.is_empty() {
                 loop {
+                    let mut best_each_rotates = vec![vec![]; cur_arms.len()];
+                    let mut best_each_actions = vec![];
+                    let mut stacked = true;
+                    let mut booked = HashSet::new();
+
                     // DFSで探索
-                    let mut stack = vec![(cur_arm_tree.clone(), vec![])];
-                    let mut best_rotates = None;
-                    let mut i = 0;
-                    'rotates_dfs: while let Some((arm_tree, rotates)) = stack.pop() {
-                        if start.elapsed().as_millis() > tl {
-                            break 'outer;
-                        }
-                        i += 1;
-                        // arm_treeのleavesがcur_boardにかぶっていたらそれをbestとして終了
-                        for leaf_id in &arm_tree.leaves {
-                            let (x, y) = arm_tree.tree_pos[leaf_id];
-                            if x < 0
-                                || y < 0
-                                || x >= self.input.n as i32
-                                || y >= self.input.n as i32
+                    for i in 0..cur_arms.len() {
+                        let mut is_p = false;
+                        let mut stack = vec![(cur_arms[i].clone(), vec![])];
+                        let mut iter = 0;
+                        'rotates_dfs: while let Some((arm_tree, rotates)) = stack.pop() {
+                            if start.elapsed().as_millis() > tl {
+                                break 'outer;
+                            }
+                            iter += 1;
+                            // arm_treeのleavesがcur_boardにかぶっていたらそれをbestとして終了
+                            for leaf_id in &arm_tree.leaves {
+                                let (x, y) = arm_tree.tree_pos[leaf_id];
+                                if x < 0
+                                    || y < 0
+                                    || x >= self.input.n as i32
+                                    || y >= self.input.n as i32
+                                {
+                                    continue;
+                                }
+                                if !is_carryings[i]
+                                    && cur_board[x as usize][y as usize]
+                                    && !booked.contains(&(x as usize, y as usize))
+                                {
+                                    cur_board[x as usize][y as usize] = false;
+                                    cur_arms[i] = arm_tree;
+                                    is_carryings[i] = true;
+                                    best_each_rotates[i] = rotates;
+                                    is_p = true;
+                                    stacked = false;
+                                    booked.insert((x as usize, y as usize));
+                                    // eprintln!("Arm[{}]: Pick at ({}, {})", i, x, y);
+                                    break 'rotates_dfs;
+                                }
+                                if is_carryings[i]
+                                    && cur_targets.contains(&(x as usize, y as usize))
+                                    && !booked.contains(&(x as usize, y as usize))
+                                {
+                                    cur_targets.remove(&(x as usize, y as usize));
+                                    cur_arms[i] = arm_tree;
+                                    is_carryings[i] = false;
+                                    best_each_rotates[i] = rotates;
+                                    is_p = true;
+                                    stacked = false;
+                                    booked.insert((x as usize, y as usize));
+                                    // eprintln!("Arm[{}]: Release at ({}, {})", i, x, y);
+                                    break 'rotates_dfs;
+                                }
+                            }
+                            let cur_id = ArmNodeID(rotates.len());
+                            if let Some((child, _)) =
+                                arm_tree.tree.get(&cur_id).and_then(|v| v.first())
                             {
-                                continue;
-                            }
-                            if !is_carrying && cur_board[x as usize][y as usize] {
-                                cur_board[x as usize][y as usize] = false;
-                                cur_arm_tree = arm_tree;
-                                is_carrying = true;
-                                best_rotates = Some(rotates);
-                                break 'rotates_dfs;
-                            }
-                            if is_carrying && cur_targets.contains(&(x as usize, y as usize)) {
-                                cur_targets.remove(&(x as usize, y as usize));
-                                cur_arm_tree = arm_tree;
-                                is_carrying = false;
-                                best_rotates = Some(rotates);
-                                break 'rotates_dfs;
-                            }
-                        }
-                        let cur_id = ArmNodeID(rotates.len());
-                        if let Some((child, _)) = arm_tree.tree.get(&cur_id).and_then(|v| v.first())
-                        {
-                            for r in [Rotate::Left, Rotate::Right] {
-                                let mut new_arm_tree = arm_tree.clone();
+                                for r in [Rotate::Left, Rotate::Right] {
+                                    let mut new_arm_tree = arm_tree.clone();
+                                    let mut new_rotates = rotates.clone();
+                                    new_rotates.push(r);
+                                    new_arm_tree.rotate(*child, r);
+                                    stack.push((new_arm_tree, new_rotates));
+                                }
+                                let new_arm_tree = arm_tree.clone();
                                 let mut new_rotates = rotates.clone();
-                                new_rotates.push(r);
-                                new_arm_tree.rotate(*child, r);
+                                new_rotates.push(Rotate::Stay);
                                 stack.push((new_arm_tree, new_rotates));
                             }
-                            let new_arm_tree = arm_tree.clone();
-                            let mut new_rotates = rotates.clone();
-                            new_rotates.push(Rotate::Stay);
-                            stack.push((new_arm_tree, new_rotates));
                         }
+
+                        // eprintln!("iter: {}", iter);
+
+                        // rotatesがcur_arm[i]の長さより短い場合はStayを追加
+                        while best_each_rotates[i].len() < cur_arms[i].tree_pos.len() - 1 {
+                            best_each_rotates[i].push(Rotate::Stay);
+                        }
+
+                        let mut best_actions = vec![Action::Stay; cur_arms[i].tree_pos.len() - 2];
+                        if is_p {
+                            best_actions.push(Action::PickOrRelease);
+                        } else {
+                            best_actions.push(Action::Stay);
+                        }
+                        best_each_actions.push(best_actions);
                     }
-                    // eprintln!("i: {}", i);
-                    // eprintln!("best_rotates: {:?}", best_rotates);
-                    if best_rotates.is_none() {
+
+                    if stacked {
                         break;
                     }
-                    let mut best_rotates = best_rotates.unwrap();
-                    // pad with Stay
-                    while best_rotates.len() < v - 1 {
-                        best_rotates.push(Rotate::Stay);
-                    }
-                    let mut actions = vec![Action::Stay; v - 1];
-                    actions.push(Action::PickOrRelease);
-                    let op = Operation {
-                        move_to: cur_move_to,
-                        rotates: best_rotates,
-                        actions,
-                    };
-                    cur_move_to = Move::Stay; // 最初だけ移動を引き継ぐため、使ったらリセット
-                    operations.push(op);
-                }
 
-                if cur_move_to != Move::Stay {
+                    // eprintln!("i: {}", i);
+                    // eprintln!("best_rotates: {:?}", best_rotates);
+                    let mut best_rotates = vec![];
+                    for rotates in best_each_rotates {
+                        best_rotates.extend(rotates);
+                    }
+                    let mut best_actions = vec![Action::Stay];
+                    for actions in best_each_actions {
+                        best_actions.extend(actions);
+                    }
                     let op = Operation {
-                        move_to: cur_move_to,
-                        rotates: vec![Rotate::Stay; v - 1],
-                        actions: vec![Action::Stay; v],
+                        move_to: Move::Stay,
+                        rotates: best_rotates,
+                        actions: best_actions,
                     };
                     operations.push(op);
                 }
@@ -199,15 +234,36 @@ impl Solver for OneArmTreeSolver {
                     break;
                 }
                 let dir = travel.pop().unwrap();
-                cur_move_to = Move::Shift(dir);
                 let d = dir.get_d();
                 let new_center = (cur_center.0 as i32 + d.0, cur_center.1 as i32 + d.1);
                 cur_center = (new_center.0 as usize, new_center.1 as usize);
-                cur_arm_tree.all_shift(d);
+                // eprintln!("Move: {:?}", dir);
+                // eprintln!("Center: {:?}", cur_center);
+                for arm in &mut cur_arms {
+                    arm.all_shift(d);
+                }
+                operations.push(Operation {
+                    move_to: Move::Shift(dir),
+                    rotates: vec![Rotate::Stay; self.input.v - 1],
+                    actions: vec![Action::Stay; self.input.v],
+                });
             }
 
+            let mut all_flatten_tree = vec![];
+            let mut prefix = 0;
+            for arm in &cur_arms {
+                let flatten_tree = arm.flatten();
+                for (id, length) in &flatten_tree {
+                    if *id == ROOT_ID {
+                        all_flatten_tree.push((ROOT_ID, *length));
+                    } else {
+                        all_flatten_tree.push((ArmNodeID(id.0 + prefix), *length));
+                    }
+                }
+                prefix += flatten_tree.len();
+            }
             let output = Output {
-                flatten_tree: cur_arm_tree.flatten(),
+                flatten_tree: all_flatten_tree,
                 initial_pos,
                 operations,
             };
@@ -215,10 +271,16 @@ impl Solver for OneArmTreeSolver {
             if best_output.is_none() {
                 best_output = Some(output);
             } else {
-                let best_score = best_output.as_ref().unwrap().operations.len();
-                let cur_score = output.operations.len();
-                if cur_score < best_score {
+                // let best_score = best_output.as_ref().unwrap().operations.len();
+                // let cur_score = output.operations.len();
+                // if cur_score < best_score {
+                //     best_output = Some(output);
+                // }
+                let res = compute_score(&self.input, &output);
+                eprintln!("score: {}, err: {}", res.0, res.1);
+                if res.1.is_empty() && res.0 < best_score {
                     best_output = Some(output);
+                    best_score = res.0;
                 }
             }
         }
