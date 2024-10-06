@@ -16,7 +16,7 @@ fn main() {
     let res1 = compute_score(&input, &output1);
     eprintln!("[MultiOP Solver]: {:?}", res1);
     let score1 = if !res1.1.is_empty() { i64::MAX } else { res1.0 };
-    let output2 = if input.v >= 10 {
+    let output2 = if input.v >= 8 {
         MultiArmTreeSolver::new(io.clone(), input.clone()).solve()
     } else {
         OneArmTreeSolver::new(io.clone(), input.clone()).solve()
