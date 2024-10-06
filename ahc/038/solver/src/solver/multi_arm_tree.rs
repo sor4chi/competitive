@@ -116,6 +116,7 @@ impl Solver for MultiArmTreeSolver {
             let mut cur_arms = arms;
             let mut is_carryings = vec![false; cur_arms.len()];
             let mut cur_center = initial_pos;
+            let mut booked_move = None;
 
             while !cur_targets.is_empty() {
                 loop {
@@ -222,9 +223,23 @@ impl Solver for MultiArmTreeSolver {
                         best_actions.extend(actions);
                     }
                     let op = Operation {
-                        move_to: Move::Stay,
+                        move_to: if let Some(dir) = booked_move {
+                            booked_move = None;
+                            Move::Shift(dir)
+                        } else {
+                            Move::Stay
+                        },
                         rotates: best_rotates,
                         actions: best_actions,
+                    };
+                    operations.push(op);
+                }
+
+                if let Some(dir) = booked_move {
+                    let op = Operation {
+                        move_to: Move::Shift(dir),
+                        rotates: vec![Rotate::Stay; self.input.v - 1],
+                        actions: vec![Action::Stay; self.input.v],
                     };
                     operations.push(op);
                 }
@@ -242,11 +257,12 @@ impl Solver for MultiArmTreeSolver {
                 for arm in &mut cur_arms {
                     arm.all_shift(d);
                 }
-                operations.push(Operation {
-                    move_to: Move::Shift(dir),
-                    rotates: vec![Rotate::Stay; self.input.v - 1],
-                    actions: vec![Action::Stay; self.input.v],
-                });
+                // operations.push(Operation {
+                //     move_to: Move::Shift(dir),
+                //     rotates: vec![Rotate::Stay; self.input.v - 1],
+                //     actions: vec![Action::Stay; self.input.v],
+                // });
+                booked_move = Some(dir);
             }
 
             let mut all_flatten_tree = vec![];
