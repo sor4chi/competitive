@@ -286,6 +286,11 @@ impl Solver for MultiArmTreeSolver {
                         actions: best_actions,
                     };
                     operations.push(op);
+
+                    // operations.lengthがbest_scoreを超えていたら打ち切り
+                    if operations.len() >= best_score as usize {
+                        continue 'outer;
+                    }
                 }
 
                 if let Some(dir) = booked_move {

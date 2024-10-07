@@ -69,6 +69,7 @@ impl Solver for OneArmTreeSolver {
         let start = Instant::now();
         let tl = 2900;
         let mut best_output = None;
+        let mut best_score = usize::MAX;
         let mut rng = rand::thread_rng();
 
         let mut iter = 0;
@@ -221,6 +222,11 @@ impl Solver for OneArmTreeSolver {
                     };
                     cur_move_to = Move::Stay; // 最初だけ移動を引き継ぐため、使ったらリセット
                     operations.push(op);
+
+                    // operations.lengthがbest_scoreを超えていたら打ち切り
+                    if operations.len() >= best_score {
+                        continue 'outer;
+                    }
                 }
 
                 if cur_move_to != Move::Stay {
@@ -253,9 +259,9 @@ impl Solver for OneArmTreeSolver {
             if best_output.is_none() {
                 best_output = Some(output);
             } else {
-                let best_score = best_output.as_ref().unwrap().operations.len();
                 let cur_score = output.operations.len();
                 if cur_score < best_score {
+                    best_score = cur_score;
                     best_output = Some(output);
                 }
             }
