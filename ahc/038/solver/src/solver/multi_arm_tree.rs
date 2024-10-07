@@ -65,6 +65,28 @@ fn test_tornado_travel() {
     eprintln!("{:?}", res);
 }
 
+// nをm個に均等に分割する
+fn split_n(n: usize, m: usize) -> Vec<usize> {
+    let mut res = vec![n / m; m];
+    for i in 0..n % m {
+        res[i] += 1;
+    }
+    res
+}
+
+#[test]
+fn test_split_n() {
+    let n = 10;
+    let m = 3;
+    let res = split_n(n, m);
+    assert_eq!(res.len(), m);
+    assert_eq!(res.iter().sum::<usize>(), n);
+    let min_v = *res.iter().min().unwrap();
+    let max_v = *res.iter().max().unwrap();
+    assert!(max_v - min_v <= 1);
+    eprintln!("{:?}", res);
+}
+
 impl Solver for MultiArmTreeSolver {
     fn solve(&mut self) -> Output {
         let start = Instant::now();
@@ -87,7 +109,7 @@ impl Solver for MultiArmTreeSolver {
             let mut arm_tree = ArmTree::new(initial_pos);
             let mut cur_id = ROOT_ID;
             let tv = self.input.v - 1;
-            let vs = vec![tv / 2, tv - tv / 2];
+            let vs = split_n(tv, rng.gen_range(2..=3));
             for v in vs {
                 for i in 0..v {
                     cur_id = arm_tree.add_arm(cur_id, rng.gen_range(1..=(self.input.n / 2)));
