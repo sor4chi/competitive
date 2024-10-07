@@ -127,22 +127,27 @@ impl Solver for MultiArmTreeSolver {
 
                     // DFSで探索
                     for i in 0..cur_arms.len() {
-                        let mut is_p = false;
-                        let mut stack = vec![(cur_arms[i].clone(), vec![])];
-                        let mut iter = 0;
-                        'rotates_dfs: while let Some((arm_tree, rotates)) = stack.pop() {
+                        // stack式DFSをするとarmsの大きいデータを毎回cloneするので遅い。再起で書く
+                        fn dfs(
+                            arm_tree: &mut ArmTree,
+                            rotates: &mut Vec<Rotate>,
+                            cur_board: &mut Vec<Vec<bool>>,
+                            cur_arms: &mut Vec<ArmTree>,
+                            is_carryings: &mut Vec<bool>,
+                            cur_targets: &mut HashSet<(usize, usize)>,
+                            booked: &mut HashSet<(usize, usize)>,
+                            start: Instant,
+                            tl: u128,
+                            n: usize,
+                            i: usize,
+                        ) -> (Vec<Rotate>, bool) {
                             if start.elapsed().as_millis() > tl {
-                                break 'outer;
+                                return (vec![], false);
                             }
-                            iter += 1;
                             // arm_treeのleavesがcur_boardにかぶっていたらそれをbestとして終了
                             for leaf_id in &arm_tree.leaves {
                                 let (x, y) = arm_tree.tree_pos[leaf_id];
-                                if x < 0
-                                    || y < 0
-                                    || x >= self.input.n as i32
-                                    || y >= self.input.n as i32
-                                {
+                                if x < 0 || y < 0 || x >= n as i32 || y >= n as i32 {
                                     continue;
                                 }
                                 if !is_carryings[i]
@@ -150,54 +155,102 @@ impl Solver for MultiArmTreeSolver {
                                     && !booked.contains(&(x as usize, y as usize))
                                 {
                                     cur_board[x as usize][y as usize] = false;
-                                    cur_arms[i] = arm_tree;
+                                    cur_arms[i] = arm_tree.clone();
                                     is_carryings[i] = true;
-                                    best_each_rotates[i] = rotates;
-                                    is_p = true;
-                                    stacked = false;
-                                    booked.insert((x as usize, y as usize));
                                     // eprintln!("Arm[{}]: Pick at ({}, {})", i, x, y);
-                                    break 'rotates_dfs;
+                                    return (rotates.clone(), true);
                                 }
                                 if is_carryings[i]
                                     && cur_targets.contains(&(x as usize, y as usize))
                                     && !booked.contains(&(x as usize, y as usize))
                                 {
                                     cur_targets.remove(&(x as usize, y as usize));
-                                    cur_arms[i] = arm_tree;
+                                    cur_arms[i] = arm_tree.clone();
                                     is_carryings[i] = false;
-                                    best_each_rotates[i] = rotates;
-                                    is_p = true;
-                                    stacked = false;
-                                    booked.insert((x as usize, y as usize));
                                     // eprintln!("Arm[{}]: Release at ({}, {})", i, x, y);
-                                    break 'rotates_dfs;
+                                    return (rotates.clone(), true);
                                 }
                             }
                             let cur_id = ArmNodeID(rotates.len());
-                            if let Some((child, _)) =
-                                arm_tree.tree.get(&cur_id).and_then(|v| v.first())
-                            {
+                            let first_child = arm_tree.tree.get(&cur_id).and_then(|v| v.first());
+                            if let Some((child, _)) = first_child {
+                                let id = child.0;
                                 for r in [Rotate::Left, Rotate::Right] {
-                                    let mut new_arm_tree = arm_tree.clone();
-                                    let mut new_rotates = rotates.clone();
-                                    new_rotates.push(r);
-                                    new_arm_tree.rotate(*child, r);
-                                    stack.push((new_arm_tree, new_rotates));
+                                    rotates.push(r);
+                                    arm_tree.rotate(ArmNodeID(id), r);
+                                    let (new_rotates, is_p) = dfs(
+                                        arm_tree,
+                                        rotates,
+                                        cur_board,
+                                        cur_arms,
+                                        is_carryings,
+                                        cur_targets,
+                                        booked,
+                                        start,
+                                        tl,
+                                        n,
+                                        i,
+                                    );
+                                    if is_p {
+                                        return (new_rotates, true);
+                                    } else {
+                                        rotates.pop();
+                                        arm_tree.rotate(ArmNodeID(id), r.reverse());
+                                    }
                                 }
-                                let new_arm_tree = arm_tree.clone();
-                                let mut new_rotates = rotates.clone();
-                                new_rotates.push(Rotate::Stay);
-                                stack.push((new_arm_tree, new_rotates));
+                                rotates.push(Rotate::Stay);
+                                let (new_rotates, is_p) = dfs(
+                                    arm_tree,
+                                    rotates,
+                                    cur_board,
+                                    cur_arms,
+                                    is_carryings,
+                                    cur_targets,
+                                    booked,
+                                    start,
+                                    tl,
+                                    n,
+                                    i,
+                                );
+                                if is_p {
+                                    return (new_rotates, true);
+                                } else {
+                                    rotates.pop();
+                                }
                             }
+                            (vec![], false)
+                        }
+
+                        let (mut best_rotates, is_p) = dfs(
+                            &mut cur_arms[i].clone(),
+                            &mut vec![],
+                            &mut cur_board,
+                            &mut cur_arms,
+                            &mut is_carryings,
+                            &mut cur_targets,
+                            &mut booked,
+                            start,
+                            tl,
+                            self.input.n,
+                            i,
+                        );
+
+                        if start.elapsed().as_millis() > tl {
+                            break 'outer;
+                        }
+
+                        if is_p {
+                            stacked = false;
                         }
 
                         // eprintln!("iter: {}", iter);
 
                         // rotatesがcur_arm[i]の長さより短い場合はStayを追加
-                        while best_each_rotates[i].len() < cur_arms[i].tree_pos.len() - 1 {
-                            best_each_rotates[i].push(Rotate::Stay);
+                        while best_rotates.len() < cur_arms[i].tree_pos.len() - 1 {
+                            best_rotates.push(Rotate::Stay);
                         }
+
+                        best_each_rotates[i] = best_rotates;
 
                         let mut best_actions = vec![Action::Stay; cur_arms[i].tree_pos.len() - 2];
                         if is_p {

@@ -114,62 +114,100 @@ impl Solver for OneArmTreeSolver {
 
             while !cur_targets.is_empty() {
                 loop {
-                    // DFSで探索
-                    let mut stack = vec![(cur_arm_tree.clone(), vec![])];
-                    let mut best_rotates = None;
-                    let mut i = 0;
-                    'rotates_dfs: while let Some((arm_tree, rotates)) = stack.pop() {
+                    fn dfs(
+                        arm_tree: &mut ArmTree,
+                        rotates: &mut Vec<Rotate>,
+                        cur_board: &mut Vec<Vec<bool>>,
+                        cur_targets: &mut HashSet<(usize, usize)>,
+                        is_carrying: &mut bool,
+                        start: Instant,
+                        tl: u128,
+                        n: usize,
+                    ) -> (Vec<Rotate>, bool) {
                         if start.elapsed().as_millis() > tl {
-                            break 'outer;
+                            return (vec![], false);
                         }
-                        i += 1;
+
                         // arm_treeのleavesがcur_boardにかぶっていたらそれをbestとして終了
                         for leaf_id in &arm_tree.leaves {
                             let (x, y) = arm_tree.tree_pos[leaf_id];
-                            if x < 0
-                                || y < 0
-                                || x >= self.input.n as i32
-                                || y >= self.input.n as i32
-                            {
+                            if x < 0 || y < 0 || x >= n as i32 || y >= n as i32 {
                                 continue;
                             }
-                            if !is_carrying && cur_board[x as usize][y as usize] {
+                            if !*is_carrying && cur_board[x as usize][y as usize] {
                                 cur_board[x as usize][y as usize] = false;
-                                cur_arm_tree = arm_tree;
-                                is_carrying = true;
-                                best_rotates = Some(rotates);
-                                break 'rotates_dfs;
+                                *is_carrying = true;
+                                return (rotates.clone(), true);
                             }
-                            if is_carrying && cur_targets.contains(&(x as usize, y as usize)) {
+                            if *is_carrying && cur_targets.contains(&(x as usize, y as usize)) {
                                 cur_targets.remove(&(x as usize, y as usize));
-                                cur_arm_tree = arm_tree;
-                                is_carrying = false;
-                                best_rotates = Some(rotates);
-                                break 'rotates_dfs;
+                                *is_carrying = false;
+                                return (rotates.clone(), true);
                             }
                         }
                         let cur_id = ArmNodeID(rotates.len());
                         if let Some((child, _)) = arm_tree.tree.get(&cur_id).and_then(|v| v.first())
                         {
+                            let id = child.0;
                             for r in [Rotate::Left, Rotate::Right] {
-                                let mut new_arm_tree = arm_tree.clone();
-                                let mut new_rotates = rotates.clone();
-                                new_rotates.push(r);
-                                new_arm_tree.rotate(*child, r);
-                                stack.push((new_arm_tree, new_rotates));
+                                rotates.push(r);
+                                arm_tree.rotate(ArmNodeID(id), r);
+                                let (res, found) = dfs(
+                                    arm_tree,
+                                    rotates,
+                                    cur_board,
+                                    cur_targets,
+                                    is_carrying,
+                                    start,
+                                    tl,
+                                    n,
+                                );
+                                if found {
+                                    return (res, true);
+                                } else {
+                                    rotates.pop();
+                                    arm_tree.rotate(ArmNodeID(id), r.reverse());
+                                }
                             }
-                            let new_arm_tree = arm_tree.clone();
-                            let mut new_rotates = rotates.clone();
-                            new_rotates.push(Rotate::Stay);
-                            stack.push((new_arm_tree, new_rotates));
+                            rotates.push(Rotate::Stay);
+                            let (res, found) = dfs(
+                                arm_tree,
+                                rotates,
+                                cur_board,
+                                cur_targets,
+                                is_carrying,
+                                start,
+                                tl,
+                                n,
+                            );
+                            if found {
+                                return (res, true);
+                            } else {
+                                rotates.pop();
+                            }
                         }
+                        (vec![], false)
                     }
-                    // eprintln!("i: {}", i);
-                    // eprintln!("best_rotates: {:?}", best_rotates);
-                    if best_rotates.is_none() {
+
+                    let (mut best_rotates, found) = dfs(
+                        &mut cur_arm_tree,
+                        &mut vec![],
+                        &mut cur_board,
+                        &mut cur_targets,
+                        &mut is_carrying,
+                        start,
+                        tl,
+                        self.input.n,
+                    );
+
+                    if start.elapsed().as_millis() > tl {
+                        break 'outer;
+                    }
+
+                    if !found {
                         break;
                     }
-                    let mut best_rotates = best_rotates.unwrap();
+
                     // pad with Stay
                     while best_rotates.len() < v - 1 {
                         best_rotates.push(Rotate::Stay);

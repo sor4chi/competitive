@@ -29,7 +29,7 @@ fn main() {
         eprintln!("[OneArmTree Solver]: {:?}", res2);
     }
 
-    if score1 < score2 {
+    if false {
         output1.write();
         eprintln!("FINAL SCORE: {}", score1);
     } else {

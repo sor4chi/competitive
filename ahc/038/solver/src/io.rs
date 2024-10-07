@@ -58,6 +58,16 @@ impl Display for Rotate {
     }
 }
 
+impl Rotate {
+    pub fn reverse(&self) -> Rotate {
+        match self {
+            Rotate::Left => Rotate::Right,
+            Rotate::Right => Rotate::Left,
+            Rotate::Stay => Rotate::Stay,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Move {
     Shift(Direction),
