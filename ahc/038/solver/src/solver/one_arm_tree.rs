@@ -7,7 +7,7 @@ use rand::Rng;
 
 use crate::{
     game::{ArmNodeID, ArmTree, Direction, ROOT_ID},
-    io::{Action, Input, Move, Operation, Output, Rotate, IO},
+    io::{Action, Input, Move, Operation, Output, Rotate, IO}, util::tornado_travel,
 };
 
 use super::Solver;
@@ -21,47 +21,6 @@ impl OneArmTreeSolver {
     pub fn new(io: IO, input: Input) -> Self {
         OneArmTreeSolver { io, input }
     }
-}
-
-const DIRS: [Direction; 4] = [
-    Direction::Right,
-    Direction::Up,
-    Direction::Left,
-    Direction::Down,
-];
-
-fn tornado_travel(n: usize) -> Vec<Direction> {
-    let mut res = vec![];
-    let mut x = n / 2;
-    let mut y = n / 2;
-    let mut d = 0;
-    let mut l = 1;
-    let mut c = 0;
-    let mut i = 0;
-    while i < n * n - 1 {
-        res.push(DIRS[d as usize]);
-        let n = DIRS[d as usize].get_d();
-        x = (x as i32 + n.0) as usize;
-        y = (y as i32 + n.1) as usize;
-        i += 1;
-        c += 1;
-        if c == l {
-            c = 0;
-            d = (d + 1) % 4;
-            if d % 2 == 0 {
-                l += 1;
-            }
-        }
-    }
-    res
-}
-
-#[test]
-fn test_tornado_travel() {
-    let n = 5;
-    let res = tornado_travel(n);
-    assert_eq!(res.len(), n * n);
-    eprintln!("{:?}", res);
 }
 
 impl Solver for OneArmTreeSolver {

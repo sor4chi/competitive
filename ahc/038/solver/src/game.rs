@@ -21,6 +21,13 @@ impl Direction {
     }
 }
 
+pub const DIRS: [Direction; 4] = [
+    Direction::Right,
+    Direction::Up,
+    Direction::Left,
+    Direction::Down,
+];
+
 #[derive(Eq, Hash, PartialEq, Copy, Clone, Debug, Ord, PartialOrd)]
 pub struct ArmNodeID(pub usize);
 impl From<usize> for ArmNodeID {
