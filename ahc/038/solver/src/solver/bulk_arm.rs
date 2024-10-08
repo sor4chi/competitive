@@ -151,13 +151,14 @@ impl Solver for BulkArmSolver {
             let mut cur_holding = vec![false; self.input.v];
             let leaves = arm_tree.leaves.clone();
             let mut cur_arm_tree = arm_tree.clone();
+            let mut booked_move = None;
 
             loop {
                 while !cur_targets.is_empty() {
                     if start.elapsed().as_millis() > tl {
                         break 'outer;
                     }
-                    let mut best_score = 0;
+                    let mut best_rotates_score = 0;
                     let mut best_rotates = vec![];
                     let mut best_actions = vec![];
                     let mut best_arm_tree = cur_arm_tree.clone();
@@ -194,7 +195,7 @@ impl Solver for BulkArmSolver {
                                 try_rotates.push(after_rotate);
                             }
 
-                            let mut try_score = 0;
+                            let mut try_rotates_score = 0;
                             let mut try_actions = vec![Action::Stay; self.input.v];
                             for leaf_id in &leaves {
                                 // 葉がcur_boardにどれだけかぶっているかを計算
@@ -208,20 +209,20 @@ impl Solver for BulkArmSolver {
                                 }
                                 if !cur_holding[leaf_id.0] && cur_board[x as usize][y as usize] {
                                     try_actions[leaf_id.0] = Action::PickOrRelease;
-                                    try_score += 1;
+                                    try_rotates_score += 1;
                                     continue;
                                 }
                                 if cur_holding[leaf_id.0]
                                     && cur_targets.contains(&(x as usize, y as usize))
                                 {
                                     try_actions[leaf_id.0] = Action::PickOrRelease;
-                                    try_score += 1;
+                                    try_rotates_score += 1;
                                     continue;
                                 }
                             }
 
-                            if try_score > best_score {
-                                best_score = try_score;
+                            if try_rotates_score > best_rotates_score {
+                                best_rotates_score = try_rotates_score;
                                 best_rotates = try_rotates.to_vec();
                                 best_arm_tree = try_arm_tree;
                                 best_actions = try_actions;
@@ -229,7 +230,7 @@ impl Solver for BulkArmSolver {
                         }
                     }
 
-                    if best_score == 0 {
+                    if best_rotates_score == 0 {
                         break;
                     }
 
@@ -267,10 +268,29 @@ impl Solver for BulkArmSolver {
                     cur_arm_tree = best_arm_tree;
 
                     operations.push(Operation {
-                        move_to: Move::Stay,
+                        move_to: if let Some(dir) = booked_move {
+                            booked_move = None;
+                            Move::Shift(dir)
+                        } else {
+                            Move::Stay
+                        },
                         rotates,
                         actions: best_actions,
                     });
+
+                    // ベストスコア以上に探索するメリットがないのでこの時点で打ち切る
+                    if operations.len() >= best_score {
+                        continue 'outer;
+                    }
+                }
+
+                if let Some(dir) = booked_move {
+                    let op = Operation {
+                        move_to: Move::Shift(dir),
+                        rotates: vec![Rotate::Stay; self.input.v - 1],
+                        actions: vec![Action::Stay; self.input.v],
+                    };
+                    operations.push(op);
                 }
 
                 if cur_targets.is_empty() {
@@ -284,11 +304,7 @@ impl Solver for BulkArmSolver {
                 let dir = tour.pop().unwrap();
                 let shift = dir.get_d();
                 cur_arm_tree.all_shift(shift);
-                operations.push(Operation {
-                    move_to: Move::Shift(dir),
-                    rotates: vec![Rotate::Stay; self.input.v - 1],
-                    actions: vec![Action::Stay; self.input.v],
-                });
+                booked_move = Some(dir);
             }
 
             let score = operations.len();

@@ -28,5 +28,6 @@ fn main() {
         eprintln!("[OneArmTree Solver]: {:?}", res2);
     }
 
-    io.write(if score1 < score2 { &output1 } else { &output2 });
+    // io.write(if score1 < score2 { &output1 } else { &output2 });
+    io.write(&output2);
 }
