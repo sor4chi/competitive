@@ -373,6 +373,7 @@ dependencies = [
  "proconio",
  "rand",
  "rand_chacha",
+ "rand_core",
  "rand_pcg",
  "rustc-hash",
  "rustsourcebundler",

@@ -162,9 +162,18 @@ impl Solver for BulkArmSolver {
                     let mut best_rotates = vec![];
                     let mut best_actions = vec![];
                     let mut best_arm_tree = cur_arm_tree.clone();
-                    let cands = generate_cands((self.input.v - 1).min(7), 3);
+                    // let cands = generate_cands((self.input.v - 1).min(7), 3);
 
-                    for rotates in &cands {
+                    // for rotates in &cands {
+                    let start_rotates_test = Instant::now();
+                    loop {
+                        if start_rotates_test.elapsed().as_millis() > 2 {
+                            break;
+                        }
+                        let mut rotates = vec![];
+                        for _ in 0..self.input.v - 1 {
+                            rotates.push(rng.gen_range(0..=2));
+                        }
                         let mut try_arm_tree = cur_arm_tree.clone();
                         for (i, r) in rotates.iter().enumerate() {
                             let rotate = match r {
