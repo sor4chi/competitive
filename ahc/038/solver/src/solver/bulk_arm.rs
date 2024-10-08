@@ -162,71 +162,54 @@ impl Solver for BulkArmSolver {
                     let mut best_rotates = vec![];
                     let mut best_actions = vec![];
                     let mut best_arm_tree = cur_arm_tree.clone();
-                    let cands = generate_cands(arm_size, 3);
+                    let cands = generate_cands((self.input.v - 1).min(7), 3);
 
-                    for after_rotate in 0..2 {
-                        for rotates in &cands {
-                            let mut try_rotates = rotates.to_vec();
-                            let mut try_arm_tree = cur_arm_tree.clone();
-                            for (i, r) in try_rotates.iter().enumerate() {
-                                let rotate = match r {
-                                    0 => Rotate::Left,
-                                    1 => Rotate::Right,
-                                    2 => Rotate::Stay,
-                                    _ => unreachable!(),
-                                };
-                                if rotate == Rotate::Stay {
-                                    continue;
-                                }
-                                try_arm_tree.rotate(ArmNodeID(i + 1), rotate);
+                    for rotates in &cands {
+                        let mut try_arm_tree = cur_arm_tree.clone();
+                        for (i, r) in rotates.iter().enumerate() {
+                            let rotate = match r {
+                                0 => Rotate::Left,
+                                1 => Rotate::Right,
+                                2 => Rotate::Stay,
+                                _ => unreachable!(),
+                            };
+                            if rotate == Rotate::Stay {
+                                continue;
                             }
+                            try_arm_tree.rotate(ArmNodeID(i + 1), rotate);
+                        }
 
-                            for leaf_id in &leaves {
-                                let rotate = match after_rotate {
-                                    0 => Rotate::Left,
-                                    1 => Rotate::Right,
-                                    2 => Rotate::Stay,
-                                    _ => unreachable!(),
-                                };
-                                if rotate == Rotate::Stay {
-                                    continue;
-                                }
-                                try_arm_tree.rotate(*leaf_id, rotate);
-                                try_rotates.push(after_rotate);
+                        let mut try_rotates_score = 0;
+                        let mut try_actions = vec![Action::Stay; self.input.v];
+                        for leaf_id in &leaves {
+                            // 葉がcur_boardにどれだけかぶっているかを計算
+                            let (x, y) = try_arm_tree.tree_pos[leaf_id];
+                            if x < 0
+                                || y < 0
+                                || x >= self.input.n as i32
+                                || y >= self.input.n as i32
+                            {
+                                continue;
                             }
+                            if !cur_holding[leaf_id.0] && cur_board[x as usize][y as usize] {
+                                try_actions[leaf_id.0] = Action::PickOrRelease;
+                                try_rotates_score += 1;
+                                continue;
+                            }
+                            if cur_holding[leaf_id.0]
+                                && cur_targets.contains(&(x as usize, y as usize))
+                            {
+                                try_actions[leaf_id.0] = Action::PickOrRelease;
+                                try_rotates_score += 1;
+                                continue;
+                            }
+                        }
 
-                            let mut try_rotates_score = 0;
-                            let mut try_actions = vec![Action::Stay; self.input.v];
-                            for leaf_id in &leaves {
-                                // 葉がcur_boardにどれだけかぶっているかを計算
-                                let (x, y) = try_arm_tree.tree_pos[leaf_id];
-                                if x < 0
-                                    || y < 0
-                                    || x >= self.input.n as i32
-                                    || y >= self.input.n as i32
-                                {
-                                    continue;
-                                }
-                                if !cur_holding[leaf_id.0] && cur_board[x as usize][y as usize] {
-                                    try_actions[leaf_id.0] = Action::PickOrRelease;
-                                    try_rotates_score += 1;
-                                    continue;
-                                }
-                                if cur_holding[leaf_id.0]
-                                    && cur_targets.contains(&(x as usize, y as usize))
-                                {
-                                    try_actions[leaf_id.0] = Action::PickOrRelease;
-                                    try_rotates_score += 1;
-                                    continue;
-                                }
-                            }
-
-                            if try_rotates_score > best_rotates_score {
-                                best_rotates_score = try_rotates_score;
-                                best_rotates = try_rotates.to_vec();
-                                best_arm_tree = try_arm_tree;
-                                best_actions = try_actions;
-                            }
+                        if try_rotates_score > best_rotates_score {
+                            best_rotates_score = try_rotates_score;
+                            best_rotates = rotates.to_vec();
+                            best_arm_tree = try_arm_tree;
+                            best_actions = try_actions;
                         }
                     }
 
@@ -309,6 +292,7 @@ impl Solver for BulkArmSolver {
 
             let score = operations.len();
             if score < best_score {
+                eprintln!("score updated: {} -> {}", best_score, score);
                 best_score = score;
                 best_operations = operations;
                 best_arm_tree = cur_arm_tree;
