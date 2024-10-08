@@ -124,7 +124,7 @@ impl Solver for BulkArmSolver {
             // split v
             let mut arm_tree = ArmTree::new(initial_pos);
             let mut cur_id = ROOT_ID;
-            let arm_size = 5;
+            let arm_size = rng.gen_range(4..=6);
             for i in 0..arm_size {
                 cur_id = arm_tree.add_arm(cur_id, rng.gen_range(1..=(self.input.n / 2)));
                 // cur_id = arm_tree.add_arm(cur_id, 1 << (arm_size - i));
