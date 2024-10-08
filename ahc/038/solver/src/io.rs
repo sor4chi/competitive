@@ -13,35 +13,7 @@ pub struct Input {
     pub t: Vec<Vec<bool>>,
 }
 
-#[derive(Default, Clone)]
-pub struct IO {}
-
-impl IO {
-    pub fn read(&mut self) -> Input {
-        input! {
-            n: usize,
-            m: usize,
-            v: usize,
-            // s: [[usize; m]; n],
-            s: [String; n],
-            t: [String; n],
-        }
-
-        Input {
-            n,
-            m,
-            v,
-            s: s.iter()
-                .map(|s| s.chars().map(|c| c == '1').collect())
-                .collect(),
-            t: t.iter()
-                .map(|t| t.chars().map(|c| c == '1').collect())
-                .collect(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rotate {
     Stay,
     Left,
@@ -131,15 +103,42 @@ pub struct Output {
     pub operations: Vec<Operation>,
 }
 
-impl Output {
-    pub fn write(&self) {
-        println!("{}", self.flatten_tree.len() + 1);
-        for (parent, len) in &self.flatten_tree {
+impl Output {}
+
+#[derive(Default, Clone)]
+pub struct IO {}
+
+impl IO {
+    pub fn read(&mut self) -> Input {
+        input! {
+            n: usize,
+            m: usize,
+            v: usize,
+            // s: [[usize; m]; n],
+            s: [String; n],
+            t: [String; n],
+        }
+
+        Input {
+            n,
+            m,
+            v,
+            s: s.iter()
+                .map(|s| s.chars().map(|c| c == '1').collect())
+                .collect(),
+            t: t.iter()
+                .map(|t| t.chars().map(|c| c == '1').collect())
+                .collect(),
+        }
+    }
+    pub fn write(&self, output: &Output) {
+        println!("{}", output.flatten_tree.len() + 1);
+        for (parent, len) in &output.flatten_tree {
             println!("{} {}", parent.0, *len);
         }
-        println!("{} {}", self.initial_pos.0, self.initial_pos.1);
+        println!("{} {}", output.initial_pos.0, output.initial_pos.1);
 
-        for op in &self.operations {
+        for op in &output.operations {
             println!("{}", op);
         }
     }
