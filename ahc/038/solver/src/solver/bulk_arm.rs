@@ -155,99 +155,80 @@ impl Solver for BulkArmSolver {
 
             loop {
                 while !cur_targets.is_empty() {
-                    // 再帰dfsで探索
-                    fn dfs(
-                        try_arm_tree: &mut ArmTree,
-                        try_rotates: &mut Vec<Rotate>,
-                        cur_board: &Vec<Vec<bool>>,
-                        cur_targets: &HashSet<(usize, usize)>,
-                        cur_holding: &Vec<bool>,
-                        timer: &Instant,
-                        tl: u128,
-                        max_depth: usize,
-                        n: usize,
-                    ) -> (usize, Vec<Rotate>, ArmTree) {
-                        if timer.elapsed().as_millis() > tl {
-                            return (0, vec![], try_arm_tree.clone());
+                    if start.elapsed().as_millis() > tl {
+                        break 'outer;
+                    }
+                    let mut best_rotates_score = 0;
+                    let mut best_rotates = vec![];
+                    let mut best_actions = vec![];
+                    let mut best_arm_tree = cur_arm_tree.clone();
+                    let cands = generate_cands((self.input.v - 1).min(7), 3);
+
+                    for rotates in &cands {
+                        let mut try_arm_tree = cur_arm_tree.clone();
+                        for (i, r) in rotates.iter().enumerate() {
+                            let rotate = match r {
+                                0 => Rotate::Left,
+                                1 => Rotate::Right,
+                                2 => Rotate::Stay,
+                                _ => unreachable!(),
+                            };
+                            if rotate == Rotate::Stay {
+                                continue;
+                            }
+                            try_arm_tree.rotate(ArmNodeID(i + 1), rotate);
                         }
 
-                        let mut try_score = 0;
-                        for leaf_id in &try_arm_tree.leaves {
+                        let mut try_rotates_score = 0;
+                        let mut try_actions = vec![Action::Stay; self.input.v];
+                        for leaf_id in &leaves {
+                            // 葉がcur_boardにどれだけかぶっているかを計算
                             let (x, y) = try_arm_tree.tree_pos[leaf_id];
-                            if x < 0 || y < 0 || x >= n as i32 || y >= n as i32 {
+                            if x < 0
+                                || y < 0
+                                || x >= self.input.n as i32
+                                || y >= self.input.n as i32
+                            {
                                 continue;
                             }
                             if !cur_holding[leaf_id.0] && cur_board[x as usize][y as usize] {
-                                try_score += 1;
+                                try_actions[leaf_id.0] = Action::PickOrRelease;
+                                try_rotates_score += 1;
                                 continue;
                             }
                             if cur_holding[leaf_id.0]
                                 && cur_targets.contains(&(x as usize, y as usize))
                             {
-                                try_score += 1;
+                                try_actions[leaf_id.0] = Action::PickOrRelease;
+                                try_rotates_score += 1;
                                 continue;
                             }
                         }
 
-                        let mut best_score = try_score;
-                        let mut best_rotates = try_rotates.clone();
-                        let mut best_arm_tree = try_arm_tree.clone();
-
-                        let try_idx = try_rotates.len() + 1;
-                        if try_idx <= max_depth {
-                            for r in [Rotate::Left, Rotate::Right, Rotate::Stay] {
-                                try_rotates.push(r);
-                                if r != Rotate::Stay {
-                                    try_arm_tree.rotate(ArmNodeID(try_idx), r);
-                                }
-                                let (res_score, res_rotates, res_arm_tree) = dfs(
-                                    try_arm_tree,
-                                    try_rotates,
-                                    cur_board,
-                                    cur_targets,
-                                    cur_holding,
-                                    timer,
-                                    tl,
-                                    max_depth,
-                                    n,
-                                );
-                                if res_score > best_score {
-                                    best_score = res_score;
-                                    best_rotates = res_rotates;
-                                    best_arm_tree = res_arm_tree;
-                                }
-                                try_rotates.pop();
-                                if r != Rotate::Stay {
-                                    try_arm_tree.rotate(ArmNodeID(try_idx), r.reverse());
-                                }
-                            }
+                        if try_rotates_score > best_rotates_score {
+                            best_rotates_score = try_rotates_score;
+                            best_rotates = rotates.to_vec();
+                            best_arm_tree = try_arm_tree;
+                            best_actions = try_actions;
                         }
-
-                        (best_score, best_rotates, best_arm_tree)
                     }
-
-                    let (best_rotates_score, best_rotates, best_arm_tree) = dfs(
-                        &mut cur_arm_tree,
-                        &mut vec![],
-                        &cur_board,
-                        &cur_targets,
-                        &cur_holding,
-                        &start,
-                        tl,
-                        (self.input.v - 1).min(7),
-                        self.input.n,
-                    );
 
                     if best_rotates_score == 0 {
                         break;
                     }
 
-                    let mut rotates = best_rotates;
+                    let mut rotates = best_rotates
+                        .iter()
+                        .map(|&r| match r {
+                            0 => Rotate::Left,
+                            1 => Rotate::Right,
+                            2 => Rotate::Stay,
+                            _ => unreachable!(),
+                        })
+                        .collect::<Vec<_>>();
                     while rotates.len() < self.input.v - 1 {
                         rotates.push(Rotate::Stay);
                     }
-
-                    let mut actions = vec![Action::Stay; self.input.v];
 
                     for leaf_id in &leaves {
                         let (x, y) = best_arm_tree.tree_pos[leaf_id];
@@ -257,14 +238,12 @@ impl Solver for BulkArmSolver {
                         if !cur_holding[leaf_id.0] && cur_board[x as usize][y as usize] {
                             cur_board[x as usize][y as usize] = false;
                             cur_holding[leaf_id.0] = true;
-                            actions[leaf_id.0] = Action::PickOrRelease;
                             continue;
                         }
                         if cur_holding[leaf_id.0] && cur_targets.contains(&(x as usize, y as usize))
                         {
                             cur_targets.remove(&(x as usize, y as usize));
                             cur_holding[leaf_id.0] = false;
-                            actions[leaf_id.0] = Action::PickOrRelease;
                             continue;
                         }
                     }
@@ -279,7 +258,7 @@ impl Solver for BulkArmSolver {
                             Move::Stay
                         },
                         rotates,
-                        actions,
+                        actions: best_actions,
                     });
 
                     // ベストスコア以上に探索するメリットがないのでこの時点で打ち切る
