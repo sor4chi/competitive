@@ -19,6 +19,97 @@ impl Direction {
             Direction::Down => (1, 0),
         }
     }
+
+    fn idx(&self) -> usize {
+        match self {
+            Direction::Up => 0,
+            Direction::Right => 1,
+            Direction::Down => 2,
+            Direction::Left => 3,
+        }
+    }
+
+    pub fn diff(&self, other: Direction) -> usize {
+        let diff = (self.idx() as i32 - other.idx() as i32).abs();
+        if diff > 2 {
+            4 - diff as usize
+        } else {
+            diff as usize
+        }
+    }
+
+    // 目標にあわせるための回転操作列を返す
+    pub fn align(&self, other: Direction) -> Vec<Rotate> {
+        let real_diff = other.idx() as i32 - self.idx() as i32;
+        match real_diff {
+            0 => vec![],
+            1 | -3 => vec![Rotate::Right],
+            -1 | 3 => vec![Rotate::Left],
+            2 => vec![Rotate::Right, Rotate::Right],
+            -2 => vec![Rotate::Left, Rotate::Left],
+            _ => panic!("Invalid diff: {}", real_diff),
+        }
+    }
+
+    // ベースの方向から見た相対方向から、絶対方向を返す
+    pub fn from_relative(&self, relative: Direction) -> Direction {
+        let base_idx = self.idx();
+        let relative_idx = relative.idx();
+        let new_idx = (base_idx + relative_idx) % 4;
+        match new_idx {
+            0 => Direction::Up,
+            1 => Direction::Right,
+            2 => Direction::Down,
+            3 => Direction::Left,
+            _ => panic!("Invalid idx: {}", new_idx),
+        }
+    }
+
+    // 絶対方向から、ベースの方向から見た相対方向を返す
+    pub fn to_relative(&self, absolute: Direction) -> Direction {
+        let base_idx = self.idx();
+        let absolute_idx = absolute.idx();
+        let new_idx = (absolute_idx + 4 - base_idx) % 4;
+        match new_idx {
+            0 => Direction::Up,
+            1 => Direction::Right,
+            2 => Direction::Down,
+            3 => Direction::Left,
+            _ => panic!("Invalid idx: {}", new_idx),
+        }
+    }
+}
+
+#[test]
+fn test_direction_diff() {
+    assert_eq!(Direction::Right.diff(Direction::Left), 2);
+    assert_eq!(Direction::Right.diff(Direction::Right), 0);
+    assert_eq!(Direction::Right.diff(Direction::Up), 1);
+    assert_eq!(Direction::Right.diff(Direction::Down), 1);
+}
+
+#[test]
+fn test_direction_align() {
+    assert_eq!(Direction::Right.align(Direction::Left), vec![Rotate::Right, Rotate::Right]);
+    assert_eq!(Direction::Right.align(Direction::Right), vec![]);
+    assert_eq!(Direction::Right.align(Direction::Up), vec![Rotate::Left]);
+    assert_eq!(Direction::Right.align(Direction::Down), vec![Rotate::Right]);
+}
+
+#[test]
+fn test_direction_from_relative() {
+    assert_eq!(Direction::Right.from_relative(Direction::Right), Direction::Down);
+    assert_eq!(Direction::Right.from_relative(Direction::Left), Direction::Up);
+    assert_eq!(Direction::Right.from_relative(Direction::Up), Direction::Right);
+    assert_eq!(Direction::Right.from_relative(Direction::Down), Direction::Left);
+}
+
+#[test]
+fn test_direction_to_relative() {
+    assert_eq!(Direction::Right.to_relative(Direction::Down), Direction::Right);
+    assert_eq!(Direction::Right.to_relative(Direction::Up), Direction::Left);
+    assert_eq!(Direction::Right.to_relative(Direction::Right), Direction::Up);
+    assert_eq!(Direction::Right.to_relative(Direction::Left), Direction::Down);
 }
 
 pub const DIRS: [Direction; 4] = [
@@ -139,6 +230,49 @@ impl ArmTree {
             .into_iter()
             .map(|(parent, _, length)| (parent, length))
             .collect()
+    }
+
+    // 指定したノードがどの方向から繋がっているかを返す
+    pub fn direction(&self, node_id: ArmNodeID) -> Direction {
+        let parent = self.tree_rev[&node_id];
+        let parent_pos = self.tree_pos[&parent];
+        let node_pos = self.tree_pos[&node_id];
+        let dx = node_pos.0 - parent_pos.0;
+        let dy = node_pos.1 - parent_pos.1;
+        if dx == 0 && dy > 0 {
+            Direction::Right
+        } else if dx == 0 && dy < 0 {
+            Direction::Left
+        } else if dx > 0 && dy == 0 {
+            Direction::Down
+        } else if dx < 0 && dy == 0 {
+            Direction::Up
+        } else {
+            panic!("Invalid direction: {:?}", (dx, dy));
+        }
+    }
+
+    pub fn show_info(&self) {
+        let tab = "    ";
+        let child_middle = "├── ";
+        let child_end = "└── ";
+        let mut q = VecDeque::new();
+        q.push_back((ROOT_ID, 0));
+        eprintln!("{}", ROOT_ID.0);
+        while let Some((node_id, depth)) = q.pop_front() {
+            let children = self.tree.get(&node_id);
+            if let Some(children) = children {
+                for (i, (child, length)) in children.iter().enumerate() {
+                    let child_str = if i == children.len() - 1 {
+                        child_end
+                    } else {
+                        child_middle
+                    };
+                    eprintln!("{}{}{}: {}", tab.repeat(depth), child_str, child.0, *length);
+                    q.push_back((*child, depth + 1));
+                }
+            }
+        }
     }
 }
 

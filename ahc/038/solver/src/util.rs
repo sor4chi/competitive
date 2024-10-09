@@ -40,9 +40,14 @@ pub fn tornado_travel(n: usize) -> Vec<Direction> {
     let mut i = 0;
     while i < n * n - 1 {
         res.push(DIRS[d as usize]);
-        let n = DIRS[d as usize].get_d();
-        x = (x as i32 + n.0) as usize;
-        y = (y as i32 + n.1) as usize;
+        let nd = DIRS[d as usize].get_d();
+        let nx = x as i32 + nd.0;
+        let ny = y as i32 + nd.1;
+        if nx < 0 || ny < 0 || nx >= n as i32 || ny >= n as i32 {
+            break;
+        }
+        x = nx as usize;
+        y = ny as usize;
         i += 1;
         c += 1;
         if c == l {

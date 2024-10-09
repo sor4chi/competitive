@@ -38,6 +38,55 @@ impl Rotate {
             Rotate::Stay => Rotate::Stay,
         }
     }
+
+    fn idx(&self) -> usize {
+        match self {
+            Rotate::Left => 0,
+            Rotate::Stay => 1,
+            Rotate::Right => 2,
+        }
+    }
+
+    pub fn diff(&self, other: Rotate) -> usize {
+        let diff = (self.idx() as i32 - other.idx() as i32).abs();
+        diff as usize
+    }
+
+    // 目標にあわせるための回転操作列を返す
+    pub fn align(&self, other: Rotate) -> Vec<Rotate> {
+        let real_diff = other.idx() as i32 - self.idx() as i32;
+        match real_diff {
+            0 => vec![],
+            1 => vec![Rotate::Right],
+            -1 => vec![Rotate::Left],
+            2 => vec![Rotate::Right, Rotate::Right],
+            -2 => vec![Rotate::Left, Rotate::Left],
+            _ => panic!("Invalid diff: {}", real_diff),
+        }
+    }
+}
+
+#[test]
+fn test_rotate_diff() {
+    assert_eq!(Rotate::Left.diff(Rotate::Right), 2);
+    assert_eq!(Rotate::Left.diff(Rotate::Left), 0);
+    assert_eq!(Rotate::Left.diff(Rotate::Stay), 1);
+    assert_eq!(Rotate::Right.diff(Rotate::Stay), 1);
+    assert_eq!(Rotate::Stay.diff(Rotate::Stay), 0);
+    assert_eq!(Rotate::Stay.diff(Rotate::Right), 1);
+}
+
+#[test]
+fn test_rotate_align() {
+    assert_eq!(
+        Rotate::Left.align(Rotate::Right),
+        vec![Rotate::Right, Rotate::Right]
+    );
+    assert_eq!(Rotate::Left.align(Rotate::Left), vec![]);
+    assert_eq!(Rotate::Left.align(Rotate::Stay), vec![Rotate::Right]);
+    assert_eq!(Rotate::Right.align(Rotate::Stay), vec![Rotate::Left]);
+    assert_eq!(Rotate::Stay.align(Rotate::Stay), vec![]);
+    assert_eq!(Rotate::Stay.align(Rotate::Right), vec![Rotate::Right]);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,6 +122,7 @@ impl Display for Action {
     }
 }
 
+#[derive(Clone)]
 pub struct Operation {
     pub move_to: Move,
     pub rotates: Vec<Rotate>,

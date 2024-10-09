@@ -5,6 +5,7 @@ pub mod multi_arm_tree;
 pub mod multi_op;
 pub mod one_arm_tree;
 pub mod one_op;
+pub mod search_arm;
 
 pub trait Solver {
     fn solve(&mut self) -> Output;
