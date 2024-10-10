@@ -16,14 +16,18 @@ fn main() {
     let res1 = compute_score(&input, &output1);
     eprintln!("[MultiOP Solver]: {:?}", res1);
     let score1 = if !res1.1.is_empty() { i64::MAX } else { res1.0 };
-    let output2 = if input.v >= 7 {
+    let output2 = if input.v >= 10 {
         SearchArmSolver::new(io.clone(), input.clone()).solve()
+    } else if input.v >= 7 {
+        BulkArmSolver::new(io.clone(), input.clone()).solve()
     } else {
         OneArmTreeSolver::new(io.clone(), input.clone()).solve()
     };
     let res2 = compute_score(&input, &output2);
-    if input.v >= 7 {
+    if input.v >= 10 {
         eprintln!("[SearchArm Solver]: {:?}", res2);
+    } else if input.v >= 7 {
+        eprintln!("[BulkArm Solver]: {:?}", res2);
     } else {
         eprintln!("[OneArmTree Solver]: {:?}", res2);
     }
