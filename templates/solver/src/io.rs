@@ -4,6 +4,10 @@ pub struct Input {
     pub n: usize,
 }
 
+pub struct Output {
+    n: usize,
+}
+
 #[derive(Default)]
 pub struct IO {}
 
@@ -15,14 +19,8 @@ impl IO {
 
         Input { n }
     }
-}
 
-pub struct Output {
-    n: usize,
-}
-
-impl Output {
-    pub fn write(&self) {
-        println!("{}", self.n);
+    pub fn write(&self, output: &Output) {
+        println!("{}", output.n);
     }
 }

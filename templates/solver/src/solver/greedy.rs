@@ -2,18 +2,17 @@ use crate::io::{Input, Output, IO};
 
 use super::Solver;
 
-pub struct GreedySolver {
-    io: IO,
-    input: Input,
+pub struct GreedySolver<'a> {
+    input: &'a Input,
 }
 
-impl GreedySolver {
-    pub fn new(io: IO, input: Input) -> Self {
-        GreedySolver { io, input }
+impl GreedySolver<'_> {
+    pub fn new(input: &Input) -> GreedySolver {
+        GreedySolver { input }
     }
 }
 
-impl Solver for GreedySolver {
+impl Solver for GreedySolver<'_> {
     fn solve(&mut self) -> Output {
         unimplemented!()
     }

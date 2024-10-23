@@ -8,7 +8,7 @@ extern crate solver;
 fn main() {
     let mut io = IO::default();
     let input = io.read();
-    let mut solver = GreedySolver::new(io, input);
+    let mut solver = GreedySolver::new(&input);
     let output = solver.solve();
-    output.write();
+    io.write(&output);
 }
