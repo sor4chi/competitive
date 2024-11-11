@@ -4,11 +4,12 @@ use super::Solver;
 
 pub struct GreedySolver<'a> {
     input: &'a Input,
+    io: &'a IO,
 }
 
 impl GreedySolver<'_> {
-    pub fn new(input: &Input) -> GreedySolver {
-        GreedySolver { input }
+    pub fn new<'a>(input: &'a Input, io: &'a IO) -> GreedySolver<'a> {
+        GreedySolver { input, io }
     }
 }
 

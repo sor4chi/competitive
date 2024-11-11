@@ -5,7 +5,7 @@ pub struct Input {
 }
 
 pub struct Output {
-    n: usize,
+    pub n: usize,
 }
 
 #[derive(Default)]
