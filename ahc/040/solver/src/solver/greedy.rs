@@ -18,9 +18,13 @@ impl Solver for GreedySolver<'_> {
         let mut measurements = vec![];
         let mut operations = vec![];
         for i in 0..self.input.N.min(self.input.T) {
+            let mut rotation = Rotation::Stay;
+            if self.input.rects[i].0 < self.input.rects[i].1 {
+                rotation = Rotation::Rotate;
+            }
             operations.push(Operation {
                 p: i,
-                r: Rotation::Stay,
+                r: rotation,
                 d: Direction::Up,
                 b: -1,
             });
