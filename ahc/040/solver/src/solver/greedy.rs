@@ -119,7 +119,6 @@ impl GreedySolver<'_> {
 }
 
 const COMPRESS_SIZE: usize = 1000;
-const MAX_BOARD: usize = 400;
 
 fn _debug_rects(rects: &[Rect]) {
     let mut svg = String::new();
@@ -127,11 +126,7 @@ fn _debug_rects(rects: &[Rect]) {
     std::fs::remove_dir_all(folder);
     std::fs::create_dir_all(folder);
     svg.push_str(
-        format!(
-            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}" width="1000" height="1000" style="background-color: #eee;">"#,
-            MAX_BOARD, MAX_BOARD
-        )
-        .as_str(),
+r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1000" height="1000" style="background-color: #eee;">"#
     );
     for (i, rect) in rects.iter().enumerate() {
         svg.push_str(&format!(
@@ -148,6 +143,9 @@ fn _debug_rects(rects: &[Rect]) {
 
 impl Solver for GreedySolver<'_> {
     fn solve(&mut self) {
+        let total_area: usize = self.input.rects.iter().map(|(w, h)| w * h).sum();
+        let expected_area = total_area * 5 / 4;
+        let expected_side = (expected_area as f64).sqrt() as usize / COMPRESS_SIZE;
         let mut rects: Vec<Rect> = vec![];
         let mut operations: Vec<Operation> = vec![];
         for (id, (w, h)) in self.input.rects.iter().enumerate() {
@@ -158,7 +156,7 @@ impl Solver for GreedySolver<'_> {
             loop {
                 {
                     let rect_normal = Rect::new(id, x, y, w, h);
-                    if x + w <= MAX_BOARD && rects.iter().all(|r| !r.overlap(&rect_normal)) {
+                    if x + w <= expected_side && rects.iter().all(|r| !r.overlap(&rect_normal)) {
                         let mut op = Operation {
                             p: id,
                             r: Rotation::Stay,
@@ -214,7 +212,7 @@ impl Solver for GreedySolver<'_> {
                 }
                 {
                     let rect_rotated = Rect::new(id, x, y, h, w);
-                    if x + h <= MAX_BOARD && rects.iter().all(|r| !r.overlap(&rect_rotated)) {
+                    if x + h <= expected_side && rects.iter().all(|r| !r.overlap(&rect_rotated)) {
                         let mut op = Operation {
                             p: id,
                             r: Rotation::Rotate,
@@ -268,7 +266,7 @@ impl Solver for GreedySolver<'_> {
                         break;
                     }
                     x += 1;
-                    if x + w > MAX_BOARD {
+                    if x + w > expected_side {
                         x = 0;
                         y += 1;
                     }
@@ -276,6 +274,7 @@ impl Solver for GreedySolver<'_> {
             }
         }
         let query = Query { operations };
+        // _debug_rects(&rects);
         for _ in 0..self.input.T {
             self.io.measure(&query);
         }
