@@ -273,10 +273,24 @@ impl Solver for GreedySolver<'_> {
                 }
             }
         }
-        let query = Query { operations };
-        // _debug_rects(&rects);
+        let mut current_opeartions = operations.clone();
+        let mut perm = (0..self.input.N).collect::<Vec<_>>();
+        let mut rng = rand::thread_rng();
         for _ in 0..self.input.T {
-            self.io.measure(&query);
+            self.io.measure(&Query {
+                operations: current_opeartions.clone(),
+            });
+            perm.shuffle(&mut rng);
+            let selects = rng.gen_range(1..=self.input.N);
+            for i in 0..selects {
+                let p = perm[i];
+                let mut op = current_opeartions[p].clone();
+                op.r = match op.r {
+                    Rotation::Stay => Rotation::Rotate,
+                    Rotation::Rotate => Rotation::Stay,
+                };
+                current_opeartions[p] = op;
+            }
         }
     }
 }
