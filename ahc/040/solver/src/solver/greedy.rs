@@ -1,8 +1,111 @@
+use std::{fmt::Display, io::Write};
+
 use rand::{seq::SliceRandom, Rng};
 
 use crate::io::{Direction, Input, Operation, Query, Rotation, IO};
 
+use std::fs::File;
+
 use super::Solver;
+
+#[derive(Clone, Debug)]
+struct Rect {
+    id: usize,
+    x1: usize,
+    y1: usize,
+    x2: usize,
+    y2: usize,
+    w: usize,
+    h: usize,
+}
+
+impl Display for Rect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Rect({}: {} {} {} {})",
+            self.id, self.x1, self.y1, self.x2, self.y2
+        )
+    }
+}
+
+impl Rect {
+    fn new(id: usize, x: usize, y: usize, w: usize, h: usize) -> Rect {
+        Rect {
+            id,
+            x1: x,
+            y1: y,
+            x2: x + w,
+            y2: y + h,
+            w,
+            h,
+        }
+    }
+
+    fn overlap(&self, other: &Rect) -> bool {
+        self.x1 < other.x2 && self.x2 > other.x1 && self.y1 < other.y2 && self.y2 > other.y1
+    }
+
+    fn subtract(&self, other: &Rect) -> Vec<Rect> {
+        if !self.overlap(other) {
+            return vec![self.clone()];
+        }
+        let mut rects = vec![];
+        if self.x1 < other.x1 {
+            rects.push(Rect::new(
+                self.id,
+                self.x1,
+                self.y1,
+                other.x1 - self.x1,
+                self.h,
+            ));
+        }
+        if self.x2 > other.x2 {
+            rects.push(Rect::new(
+                self.id,
+                other.x2,
+                self.y1,
+                self.x2 - other.x2,
+                self.h,
+            ));
+        }
+        if self.y1 < other.y1 {
+            rects.push(Rect::new(
+                self.id,
+                self.x1,
+                self.y1,
+                self.w,
+                other.y1 - self.y1,
+            ));
+        }
+        if self.y2 > other.y2 {
+            rects.push(Rect::new(
+                self.id,
+                self.x1,
+                other.y2,
+                self.w,
+                self.y2 - other.y2,
+            ));
+        }
+        rects
+    }
+
+    fn include(&self, other: &Rect) -> bool {
+        self.x1 <= other.x1 && self.y1 <= other.y1 && self.x2 >= other.x2 && self.y2 >= other.y2
+    }
+
+    fn larger_than(&self, w: usize, h: usize) -> bool {
+        w <= self.w && h <= self.h
+    }
+
+    fn x_connected(&self, other: &Rect) -> bool {
+        self.x1 == other.x2 || self.x2 == other.x1
+    }
+
+    fn y_connected(&self, other: &Rect) -> bool {
+        self.y1 == other.y2 || self.y2 == other.y1
+    }
+}
 
 pub struct GreedySolver<'a> {
     input: &'a Input,
@@ -15,57 +118,166 @@ impl GreedySolver<'_> {
     }
 }
 
+const COMPRESS_SIZE: usize = 1000;
+const MAX_BOARD: usize = 400;
+
+fn _debug_rects(rects: &[Rect]) {
+    let mut svg = String::new();
+    let folder = "plots";
+    std::fs::remove_dir_all(folder);
+    std::fs::create_dir_all(folder);
+    svg.push_str(
+        format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}" width="1000" height="1000" style="background-color: #eee;">"#,
+            MAX_BOARD, MAX_BOARD
+        )
+        .as_str(),
+    );
+    for (i, rect) in rects.iter().enumerate() {
+        svg.push_str(&format!(
+            r#"<rect x="{}" y="{}" width="{}" height="{}" fill="red" fill-opacity="0.5" />"#,
+            rect.x1, rect.y1, rect.w, rect.h
+        ));
+        let svg_text = svg.clone() + "</svg>";
+        File::create(format!("{}/{}.svg", folder, i))
+            .unwrap()
+            .write_all(svg_text.as_bytes())
+            .unwrap();
+    }
+}
+
 impl Solver for GreedySolver<'_> {
     fn solve(&mut self) {
-        let mut operations = vec![];
-        for i in 0..self.input.N {
-            let mut rotation = Rotation::Stay;
-            if self.input.rects[i].0 < self.input.rects[i].1 {
-                rotation = Rotation::Rotate;
+        let mut rects: Vec<Rect> = vec![];
+        let mut operations: Vec<Operation> = vec![];
+        for (id, (w, h)) in self.input.rects.iter().enumerate() {
+            let w = *w / COMPRESS_SIZE;
+            let h = *h / COMPRESS_SIZE;
+            let mut x = 0;
+            let mut y = 0;
+            loop {
+                {
+                    let rect_normal = Rect::new(id, x, y, w, h);
+                    if x + w <= MAX_BOARD && rects.iter().all(|r| !r.overlap(&rect_normal)) {
+                        let mut op = Operation {
+                            p: id,
+                            r: Rotation::Stay,
+                            d: Direction::Left,
+                            b: -1,
+                        };
+                        if rect_normal.y1 == 0 {
+                            op = Operation {
+                                p: id,
+                                r: Rotation::Stay,
+                                d: Direction::Left,
+                                b: -1,
+                            };
+                        } else {
+                            for r in &rects {
+                                if r.y_connected(&rect_normal) {
+                                    op = Operation {
+                                        p: id,
+                                        r: Rotation::Stay,
+                                        d: Direction::Left,
+                                        b: r.id as isize,
+                                    };
+                                    break;
+                                }
+                            }
+                        }
+
+                        if rect_normal.x1 == 0 {
+                            op = Operation {
+                                p: id,
+                                r: Rotation::Stay,
+                                d: Direction::Up,
+                                b: -1,
+                            };
+                        } else {
+                            for r in &rects {
+                                if r.x_connected(&rect_normal) {
+                                    op = Operation {
+                                        p: id,
+                                        r: Rotation::Stay,
+                                        d: Direction::Up,
+                                        b: r.id as isize,
+                                    };
+                                    break;
+                                }
+                            }
+                        }
+
+                        operations.push(op);
+                        rects.push(rect_normal);
+                        break;
+                    }
+                }
+                {
+                    let rect_rotated = Rect::new(id, x, y, h, w);
+                    if x + h <= MAX_BOARD && rects.iter().all(|r| !r.overlap(&rect_rotated)) {
+                        let mut op = Operation {
+                            p: id,
+                            r: Rotation::Rotate,
+                            d: Direction::Left,
+                            b: -1,
+                        };
+                        if rect_rotated.y1 == 0 {
+                            op = Operation {
+                                p: id,
+                                r: Rotation::Rotate,
+                                d: Direction::Left,
+                                b: -1,
+                            };
+                        } else {
+                            for r in &rects {
+                                if r.y_connected(&rect_rotated) {
+                                    op = Operation {
+                                        p: id,
+                                        r: Rotation::Rotate,
+                                        d: Direction::Left,
+                                        b: r.id as isize,
+                                    };
+                                    break;
+                                }
+                            }
+                        }
+
+                        if rect_rotated.x1 == 0 {
+                            op = Operation {
+                                p: id,
+                                r: Rotation::Rotate,
+                                d: Direction::Up,
+                                b: -1,
+                            };
+                        } else {
+                            for r in &rects {
+                                if r.x_connected(&rect_rotated) {
+                                    op = Operation {
+                                        p: id,
+                                        r: Rotation::Rotate,
+                                        d: Direction::Up,
+                                        b: r.id as isize,
+                                    };
+                                    break;
+                                }
+                            }
+                        }
+
+                        operations.push(op);
+                        rects.push(rect_rotated);
+                        break;
+                    }
+                    x += 1;
+                    if x + w > MAX_BOARD {
+                        x = 0;
+                        y += 1;
+                    }
+                }
             }
-            operations.push(Operation {
-                p: i,
-                r: rotation,
-                d: Direction::Up,
-                b: -1,
-            });
         }
-        let measure = self.io.measure(&Query {
-            operations: operations.clone(),
-        });
-        let mut best_score = measure.0 + measure.1;
-        let mut best_operations = operations.clone();
-        let mut perm = (0..self.input.N).collect::<Vec<_>>();
-        let mut seed = [0; 32];
-        let mut rng: rand::rngs::StdRng = rand::SeedableRng::from_seed(seed);
-        for _ in 0..self.input.T - 1 {
-            perm.shuffle(&mut rng);
-            let mut new_operations = best_operations.clone();
-            for i in 0..self.input.N / 4 {
-                let p = perm[i];
-                let rotation = if rng.gen::<bool>() {
-                    Rotation::Rotate
-                } else {
-                    Rotation::Stay
-                };
-                new_operations[p].r = rotation;
-                let b = rng.gen_range(-1..p as isize);
-                new_operations[p].b = b;
-                let d = if rng.gen::<bool>() {
-                    Direction::Up
-                } else {
-                    Direction::Left
-                };
-                new_operations[p].d = d;
-            }
-            let measure = self.io.measure(&Query {
-                operations: new_operations.clone(),
-            });
-            let score = measure.0 + measure.1;
-            if score < best_score {
-                best_score = score;
-                best_operations = new_operations.clone();
-            }
+        let query = Query { operations };
+        for _ in 0..self.input.T {
+            self.io.measure(&query);
         }
     }
 }
