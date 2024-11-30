@@ -11,7 +11,7 @@ pub struct Input {
     pub rects: Vec<(usize, usize)>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Rotation {
     Stay,
     Rotate,
