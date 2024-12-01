@@ -1,6 +1,6 @@
 use solver::{
     io::IO,
-    solver::{greedy::GreedySolver, Solver},
+    solver::{row_packing::RowPackingSolver, Solver},
 };
 
 extern crate solver;
@@ -8,6 +8,6 @@ extern crate solver;
 fn main() {
     let mut io = IO::default();
     let input = io.read();
-    let mut solver = GreedySolver::new(&input, &io);
+    let mut solver = RowPackingSolver::new(&input, &io);
     solver.solve()
 }
