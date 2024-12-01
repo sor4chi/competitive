@@ -47,11 +47,12 @@ if (IS_PARALLEL) {
   await Promise.all(
     seedChunks.map((chunk) =>
       Promise.all(
-        chunk.map((seed) =>
+        chunk.map((seed) => {
+          console.log(`Testing seed ${seed}...`);
           execSync(
             `time ${tools}/target/release/tester ${solver}/target/release/solve < ${tools}/in/${seed}.txt > ${tools}/out/${seed}.txt 2> ${tools}/err/${seed}.txt`
-          )
-        )
+          );
+        })
       )
     )
   );

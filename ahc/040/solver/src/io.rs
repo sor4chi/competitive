@@ -26,7 +26,7 @@ impl Display for Rotation {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Direction {
     Up,
     Left,
