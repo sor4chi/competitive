@@ -1,6 +1,6 @@
 use std::{collections::HashSet, mem::swap};
 
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 use rand_pcg::Pcg64Mcg;
 
@@ -49,13 +49,47 @@ fn search(row_width: usize, rects: &[(usize, usize)], inv: bool) -> (usize, Vec<
 
 impl Solver for RowPackingSolver<'_> {
     fn solve(&mut self) {
+        let mut rects_measured = vec![];
+        for rect in &self.input.rects {
+            rects_measured.push(vec![(rect.0, rect.1)]);
+        }
+        let mut perm = (0..self.input.N).collect::<Vec<_>>();
+        let mut rng = Pcg64Mcg::new(42);
+        perm.shuffle(&mut rng);
+        let mut trial = (self.input.T as i32 - self.input.N as i32).max(0) as usize;
+        while trial > 0 {
+            let idx = trial % self.input.N;
+            let (w, h) = self.io.measure(&Query {
+                operations: vec![Operation {
+                    p: perm[idx],
+                    r: Rotation::Stay,
+                    d: Direction::Up,
+                    b: -1,
+                }],
+            });
+            rects_measured[perm[idx]].push((w, h));
+            trial -= 1;
+        }
+        // average
+        let mut rects = vec![];
+        for rect in rects_measured.iter() {
+            let mut w = 0;
+            let mut h = 0;
+            for (wi, hi) in rect {
+                w += wi;
+                h += hi;
+            }
+            w /= rect.len();
+            h /= rect.len();
+            rects.push((w, h));
+        }
         // searchが最も小さくなるような場所を探す
         let row_widths = {
             let mut visited = HashSet::new();
             let mut score_widths = vec![];
             for inv in &[false, true] {
                 for width in (0..=1000000).step_by(1000) {
-                    let (score, row_counts) = search(width, &self.input.rects, *inv);
+                    let (score, row_counts) = search(width, &rects, *inv);
                     if !visited.insert((row_counts, *inv)) {
                         continue;
                     }
@@ -65,7 +99,7 @@ impl Solver for RowPackingSolver<'_> {
             score_widths.sort_by_key(|x| x.0);
             score_widths
         };
-        for t in 0..self.input.T {
+        for t in 0..self.input.N.min(self.input.T) {
             if t >= row_widths.len() {
                 eprintln!("t={} is out of range", t);
                 self.io.measure(&Query { operations: vec![] });
@@ -74,7 +108,7 @@ impl Solver for RowPackingSolver<'_> {
             let mut operations = vec![];
             let mut cur_width = 0;
             for i in 0..self.input.N {
-                let mut rotate = if self.input.rects[i].0 < self.input.rects[i].1 {
+                let mut rotate = if rects[i].0 < rects[i].1 {
                     Rotation::Stay
                 } else {
                     Rotation::Rotate
@@ -83,9 +117,9 @@ impl Solver for RowPackingSolver<'_> {
                     rotate.flip();
                 }
                 let w = if rotate == Rotation::Stay {
-                    self.input.rects[i].0
+                    rects[i].0
                 } else {
-                    self.input.rects[i].1
+                    rects[i].1
                 };
                 operations.push(Operation {
                     p: i,
