@@ -9,4 +9,4 @@ cd $dir/solver
 cargo build --release
 
 cd $dir/tools
-cargo run -r --bin tester ../solver/target/release/solve < in/$seed.txt > ../.out
+cargo run -r --bin tester $dir/solver/target/release/solve < in/$seed.txt > $dir/.out

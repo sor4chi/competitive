@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, mem::swap};
 
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
@@ -19,7 +19,7 @@ impl RowPackingSolver<'_> {
     }
 }
 
-fn search(row_width: usize, rects: &[(usize, usize)]) -> (usize, Vec<usize>) {
+fn search(row_width: usize, rects: &[(usize, usize)], inv: bool) -> (usize, Vec<usize>) {
     let mut width = 0;
     let mut max_width = 0;
     let mut height = 0;
@@ -27,7 +27,10 @@ fn search(row_width: usize, rects: &[(usize, usize)]) -> (usize, Vec<usize>) {
     let mut row_counts = vec![];
     let mut row_count = 0;
     for (w, h) in rects {
-        let (w, h) = if w < h { (*w, *h) } else { (*h, *w) };
+        let (mut w, mut h) = if w < h { (*w, *h) } else { (*h, *w) };
+        if inv {
+            swap(&mut w, &mut h);
+        }
         if width + w > row_width {
             max_width = max_width.max(width);
             width = 0;
@@ -50,12 +53,14 @@ impl Solver for RowPackingSolver<'_> {
         let row_widths = {
             let mut visited = HashSet::new();
             let mut score_widths = vec![];
-            for width in (0..=1000000).step_by(1000) {
-                let (score, row_counts) = search(width, &self.input.rects);
-                if !visited.insert(row_counts) {
-                    continue;
+            for inv in &[false, true] {
+                for width in (0..=1000000).step_by(1000) {
+                    let (score, row_counts) = search(width, &self.input.rects, *inv);
+                    if !visited.insert((row_counts, *inv)) {
+                        continue;
+                    }
+                    score_widths.push((score, width, *inv));
                 }
-                score_widths.push((score, width));
             }
             score_widths.sort_by_key(|x| x.0);
             score_widths
@@ -69,11 +74,14 @@ impl Solver for RowPackingSolver<'_> {
             let mut operations = vec![];
             let mut cur_width = 0;
             for i in 0..self.input.N {
-                let rotate = if self.input.rects[i].0 > self.input.rects[i].1 {
-                    Rotation::Rotate
-                } else {
+                let mut rotate = if self.input.rects[i].0 < self.input.rects[i].1 {
                     Rotation::Stay
+                } else {
+                    Rotation::Rotate
                 };
+                if row_widths[t].2 {
+                    rotate.flip();
+                }
                 let w = if rotate == Rotation::Stay {
                     self.input.rects[i].0
                 } else {

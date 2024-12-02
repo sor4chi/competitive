@@ -17,6 +17,15 @@ pub enum Rotation {
     Rotate,
 }
 
+impl Rotation {
+    pub fn flip(&mut self) {
+        *self = match self {
+            Rotation::Stay => Rotation::Rotate,
+            Rotation::Rotate => Rotation::Stay,
+        };
+    }
+}
+
 impl Display for Rotation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -80,5 +89,9 @@ impl IO {
         }
 
         (w, h)
+    }
+
+    pub fn comment(&self, comment: &str) {
+        println!("#{}", comment);
     }
 }
