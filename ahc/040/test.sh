@@ -1,4 +1,7 @@
 seed=$1
+if [ -z $seed ]; then
+    seed=0
+fi
 if [[ $seed =~ ^[0-9]+$ ]]; then
     seed=$(printf "%04d" $seed)
 fi
@@ -9,4 +12,4 @@ cd $dir/solver
 cargo build --release
 
 cd $dir/tools
-cargo run -r --bin tester $dir/solver/target/release/solve < in/$seed.txt > $dir/.out
+cargo run -r --bin tester $dir/solver/target/release/solve $seed <in/$seed.txt >$dir/.out
