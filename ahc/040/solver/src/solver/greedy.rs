@@ -2,7 +2,10 @@ use std::{fmt::Display, io::Write};
 
 use rand::{seq::SliceRandom, Rng};
 
-use crate::io::{Direction, Input, Operation, Query, Rotation, IO};
+use crate::{
+    io::{Direction, Input, Operation, Query, Rotation, IO},
+    state::State,
+};
 
 use std::fs::File;
 
@@ -276,10 +279,18 @@ impl Solver for GreedySolver<'_> {
         let mut current_opeartions = operations.clone();
         let mut perm = (0..self.input.N).collect::<Vec<_>>();
         let mut rng = rand::thread_rng();
-        for _ in 0..self.input.T {
-            self.io.measure(&Query {
+        let mut best_operations = operations.clone();
+        let mut state = State::new(self.input);
+        let _ = state.query(self.input, &best_operations);
+        let mut best_score = state.score_t as usize;
+        for _ in 0..self.input.T - 1 {
+            let (w, h) = self.io.measure(&Query {
                 operations: current_opeartions.clone(),
             });
+            if w + h < best_score {
+                best_score = w + h;
+                best_operations.clone_from(&current_opeartions);
+            }
             perm.shuffle(&mut rng);
             let selects = rng.gen_range(1..=self.input.N);
             for i in 0..selects {
@@ -292,5 +303,23 @@ impl Solver for GreedySolver<'_> {
                 current_opeartions[p] = op;
             }
         }
+        // それぞれのrectをひとつづつ回転させていきスコアが良くなったら採用
+        for i in 0..self.input.N {
+            let mut operations = best_operations.clone();
+            operations[i].r = match operations[i].r {
+                Rotation::Stay => Rotation::Rotate,
+                Rotation::Rotate => Rotation::Stay,
+            };
+            let mut state = State::new(self.input);
+            let _ = state.query(self.input, &operations);
+            let score = state.score_t as usize;
+            if score < best_score {
+                best_score = score;
+                best_operations.clone_from(&operations);
+            }
+        }
+        self.io.measure(&Query {
+            operations: best_operations,
+        });
     }
 }

@@ -4,7 +4,10 @@ use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 use rand_pcg::Pcg64Mcg;
 
-use crate::io::{Direction, Input, Operation, Query, Rotation, IO};
+use crate::{
+    io::{Direction, Input, Operation, Query, Rotation, IO},
+    state::State,
+};
 
 use super::Solver;
 
@@ -99,7 +102,11 @@ impl Solver for RowPackingSolver<'_> {
             score_widths.sort_by_key(|x| x.0);
             score_widths
         };
-        for t in 0..self.input.N.min(self.input.T) {
+        let mut state = State::new(self.input);
+        let mut best_operations = vec![];
+        let _ = state.query(self.input, &best_operations);
+        let mut best_score = state.score_t as usize;
+        for t in 0..self.input.N.min(self.input.T) - 1 {
             if t >= row_widths.len() {
                 eprintln!("t={} is out of range", t);
                 self.io.measure(&Query { operations: vec![] });
@@ -136,9 +143,31 @@ impl Solver for RowPackingSolver<'_> {
                     cur_width = 0;
                 }
             }
-            self.io.measure(&Query {
+            let (w, h) = self.io.measure(&Query {
                 operations: operations.clone(),
             });
+            if w + h < best_score {
+                best_score = w + h;
+                best_operations.clone_from(&operations);
+            }
         }
+        // それぞれのrectをひとつづつ回転させていきスコアが良くなったら採用
+        for i in 0..self.input.N {
+            let mut operations = best_operations.clone();
+            operations[i].r = match operations[i].r {
+                Rotation::Stay => Rotation::Rotate,
+                Rotation::Rotate => Rotation::Stay,
+            };
+            let mut state = State::new(self.input);
+            let _ = state.query(self.input, &operations);
+            let score = state.score_t as usize;
+            if score < best_score {
+                best_score = score;
+                best_operations.clone_from(&operations);
+            }
+        }
+        self.io.measure(&Query {
+            operations: best_operations,
+        });
     }
 }
