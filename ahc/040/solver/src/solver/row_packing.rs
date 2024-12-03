@@ -72,23 +72,29 @@ impl Solver for RowPackingSolver<'_> {
         }
         let mut rng = Pcg64Mcg::new(42);
         let trial = BASE_TRIAL.min(self.input.T - 1);
+        // 最初の3つを見て最も大きい(つまりmax(width, height)が最も大きい)rectを探す
+        let mut max_rect = 0;
+        let mut max_rect_index = 0;
+        for i in 0..3 {
+            let (w, h) = self.input.rects[i];
+            if w.max(h) > max_rect {
+                max_rect = w.max(h);
+                max_rect_index = i;
+            }
+        }
         for _ in 0..self.input.T - trial - 1 {
             // split in 2
             let mut width_measure_group = vec![];
             let mut height_measure_group = vec![];
-            let mut perm = (0..self.input.N).collect::<Vec<_>>();
-            perm.shuffle(&mut rng);
-            perm.truncate(self.input.N);
-            perm.sort();
-            for i in 1..self.input.N {
+            for i in max_rect_index + 1..self.input.N {
                 if rng.gen_bool(0.5) {
-                    width_measure_group.push(perm[i]);
+                    width_measure_group.push(i);
                 } else {
-                    height_measure_group.push(perm[i]);
+                    height_measure_group.push(i);
                 }
             }
             let mut operations = vec![Operation {
-                p: perm[0],
+                p: max_rect_index,
                 r: Rotation::Stay,
                 d: Direction::Up,
                 b: -1,
@@ -112,8 +118,8 @@ impl Solver for RowPackingSolver<'_> {
             operations.sort_by_key(|op| op.p);
             let query = Query { operations };
             let (width, height) = self.io.measure(&query);
-            width_measure_group.insert(0, 0);
-            height_measure_group.insert(0, 0);
+            width_measure_group.insert(0, max_rect_index);
+            height_measure_group.insert(0, max_rect_index);
             measurement_width_indicies.push(width_measure_group.clone());
             measurement_width_values.push(width);
             measurement_height_indicies.push(height_measure_group.clone());
@@ -166,13 +172,6 @@ impl Solver for RowPackingSolver<'_> {
             + lambda_reg * na::DMatrix::<f64>::identity(self.input.N, self.input.N);
         let AtY_height = A_height.transpose() * &y_height
             + lambda_reg * prior_mean * na::DVector::<f64>::repeat(self.input.N, 1.0);
-
-        // let estimated_width = na::linalg::Cholesky::new(AtA_width)
-        //     .unwrap()
-        //     .solve(&AtY_width);
-        // let estimated_height = na::linalg::Cholesky::new(AtA_height)
-        //     .unwrap()
-        //     .solve(&AtY_height);
 
         let estimated_width = na::linalg::Cholesky::new(AtA_width)
             .unwrap()
