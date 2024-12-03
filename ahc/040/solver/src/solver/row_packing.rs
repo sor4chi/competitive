@@ -263,6 +263,10 @@ impl Solver for RowPackingSolver<'_> {
                         Rotation::Rotate => Rotation::Stay,
                     };
                 }
+                let selected = rng.gen_range(0..operations.len() - 1);
+                if rng.gen_bool(0.1) && operations[selected + 1].b != selected as isize {
+                    operations.remove(selected);
+                }
                 let mut state = State::new(&estimated_input);
                 let _ = state.query(&estimated_input, &operations);
                 let score = state.score_t as usize;
