@@ -71,7 +71,7 @@ impl Solver for RowPackingSolver<'_> {
             measurement_height_values.push(self.input.rects[i].1);
         }
         let mut rng = Pcg64Mcg::new(42);
-        let trial = BASE_TRIAL.min(self.input.T - 1);
+        let trial = BASE_TRIAL.min(self.input.T);
         // 最初の3つを見て最も大きい(つまりmax(width, height)が最も大きい)rectを探す
         let mut max_rect = 0;
         let mut max_rect_index = 0;
@@ -82,7 +82,7 @@ impl Solver for RowPackingSolver<'_> {
                 max_rect_index = i;
             }
         }
-        for _ in 0..self.input.T - trial - 1 {
+        for _ in 0..self.input.T - trial {
             // split in 2
             let mut width_measure_group = vec![];
             let mut height_measure_group = vec![];
@@ -210,17 +210,13 @@ impl Solver for RowPackingSolver<'_> {
             score_widths.sort_by_key(|x| x.0);
             score_widths
         };
-        let mut state = State::new(&estimated_input);
-        let mut best_operations = vec![];
-        let _ = state.query(&estimated_input, &best_operations);
-        let mut best_score = state.score_t as usize;
         for t in 0..trial {
             if t >= row_widths.len() {
                 eprintln!("t={} is out of range", t);
                 self.io.measure(&Query { operations: vec![] });
                 continue;
             }
-            let mut operations = vec![];
+            let mut best_operations = vec![];
             let mut cur_width = 0;
             for i in 0..estimated_input.N {
                 let mut rotate = if estimated_input.rects[i].0 < estimated_input.rects[i].1 {
@@ -236,7 +232,7 @@ impl Solver for RowPackingSolver<'_> {
                 } else {
                     estimated_input.rects[i].1
                 };
-                operations.push(Operation {
+                best_operations.push(Operation {
                     p: i,
                     r: rotate,
                     d: Direction::Up,
@@ -251,37 +247,33 @@ impl Solver for RowPackingSolver<'_> {
                     cur_width = 0;
                 }
             }
-            let (w, h) = self.io.measure(&Query {
-                operations: operations.clone(),
-            });
-            if w + h < best_score {
-                best_score = w + h;
-                best_operations.clone_from(&operations);
-            }
-        }
-        // それぞれのrectをひとつづつ回転させていきスコアが良くなったら採用
-        let mut perm = (0..estimated_input.N).collect::<Vec<_>>();
-        while start.elapsed().as_millis() < 2900 {
-            let mut operations = best_operations.clone();
-            perm.shuffle(&mut rng);
-            let rotates = rng.gen_range(1..=estimated_input.N);
-            for i in 0..rotates {
-                operations[perm[i]].r = match operations[perm[i]].r {
-                    Rotation::Stay => Rotation::Rotate,
-                    Rotation::Rotate => Rotation::Stay,
-                };
-            }
+            // それぞれのrectをひとつづつ回転させていきスコアが良くなったら採用
+            let mut perm = (0..estimated_input.N).collect::<Vec<_>>();
+            let start_rotation = Instant::now();
             let mut state = State::new(&estimated_input);
-            let _ = state.query(&estimated_input, &operations);
-            let score = state.score_t as usize;
-            if score < best_score {
-                best_score = score;
-                best_operations.clone_from(&operations);
+            let _ = state.query(&estimated_input, &best_operations);
+            let mut best_score = state.score_t as usize;
+            while start_rotation.elapsed().as_millis() < 90 {
+                let mut operations = best_operations.clone();
+                perm.shuffle(&mut rng);
+                let rotates = rng.gen_range(1..=estimated_input.N);
+                for i in 0..rotates {
+                    operations[perm[i]].r = match operations[perm[i]].r {
+                        Rotation::Stay => Rotation::Rotate,
+                        Rotation::Rotate => Rotation::Stay,
+                    };
+                }
+                let mut state = State::new(&estimated_input);
+                let _ = state.query(&estimated_input, &operations);
+                let score = state.score_t as usize;
+                if score < best_score {
+                    best_score = score;
+                    best_operations.clone_from(&operations);
+                }
             }
+            self.io.measure(&Query {
+                operations: best_operations,
+            });
         }
-
-        self.io.measure(&Query {
-            operations: best_operations,
-        });
     }
 }
