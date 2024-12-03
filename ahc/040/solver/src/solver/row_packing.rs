@@ -1,4 +1,4 @@
-use std::{collections::HashSet, mem::swap};
+use std::{collections::HashSet, mem::swap, time::Instant};
 
 use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_distr::{Distribution, Normal};
@@ -152,12 +152,18 @@ impl Solver for RowPackingSolver<'_> {
             }
         }
         // それぞれのrectをひとつづつ回転させていきスコアが良くなったら採用
-        for i in 0..self.input.N {
+        let start = Instant::now();
+        let mut perm = (0..self.input.N).collect::<Vec<_>>();
+        while start.elapsed().as_millis() < 2900 {
             let mut operations = best_operations.clone();
-            operations[i].r = match operations[i].r {
-                Rotation::Stay => Rotation::Rotate,
-                Rotation::Rotate => Rotation::Stay,
-            };
+            perm.shuffle(&mut rng);
+            let rotates = rng.gen_range(1..=self.input.N);
+            for i in 0..rotates {
+                operations[perm[i]].r = match operations[perm[i]].r {
+                    Rotation::Stay => Rotation::Rotate,
+                    Rotation::Rotate => Rotation::Stay,
+                };
+            }
             let mut state = State::new(self.input);
             let _ = state.query(self.input, &operations);
             let score = state.score_t as usize;
@@ -166,6 +172,7 @@ impl Solver for RowPackingSolver<'_> {
                 best_operations.clone_from(&operations);
             }
         }
+
         self.io.measure(&Query {
             operations: best_operations,
         });
