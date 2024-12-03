@@ -25,7 +25,7 @@ impl EstimationSolver<'_> {
 }
 
 const SIZE_LOWER_BOUND: usize = 10000;
-const SIZE_UPPER_BOUND: usize = 50000;
+const SIZE_UPPER_BOUND: usize = 100000;
 
 fn load_source_value(n: usize, seed: usize) -> Vec<(i64, i64)> {
     let path = format!("../tools/in/{:04}.txt", seed);
