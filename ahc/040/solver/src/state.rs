@@ -1,5 +1,7 @@
 #![allow(non_snake_case, unused_macros)]
 
+use std::hash::{Hash, Hasher};
+
 use crate::io::{Direction, Input, Operation, Rotation};
 
 pub trait SetMinMax {
@@ -32,7 +34,7 @@ pub struct Cmd {
     b: i32,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Pos {
     pub x1: i32,
     pub x2: i32,
@@ -60,6 +62,12 @@ pub struct State {
     pub H: i32,
     pub score_t: i32,
     pub score: i32,
+}
+
+impl Hash for State {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.pos.hash(state);
+    }
 }
 
 impl State {

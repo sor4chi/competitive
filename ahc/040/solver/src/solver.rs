@@ -1,3 +1,4 @@
+pub mod beam;
 pub mod estimation;
 pub mod greedy;
 pub mod row_packing;
