@@ -55,6 +55,8 @@ fn search(row_width: usize, rects: &[(usize, usize)], inv: bool) -> (usize, Vec<
     (max_width + height + max_height_in_row, row_counts)
 }
 
+const BASE_TRIAL: usize = 30;
+
 impl Solver for RowPackingSolver<'_> {
     fn solve(&mut self) {
         let start = Instant::now();
@@ -69,7 +71,8 @@ impl Solver for RowPackingSolver<'_> {
             measurement_height_values.push(self.input.rects[i].1);
         }
         let mut rng = Pcg64Mcg::new(42);
-        for _ in 0..(self.input.T as i32 - self.input.N as i32).max(0) {
+        let trial = BASE_TRIAL.min(self.input.T - 1);
+        for _ in 0..self.input.T - trial - 1 {
             // split in 2
             let mut width_measure_group = vec![];
             let mut height_measure_group = vec![];
@@ -146,14 +149,6 @@ impl Solver for RowPackingSolver<'_> {
                 .collect(),
         );
 
-        // debug print A_width
-        for i in 0..A_width.nrows() {
-            for j in 0..A_width.ncols() {
-                eprint!("{}", if A_width[(i, j)] == 1.0 { "1" } else { "0" });
-            }
-            eprintln!();
-        }
-
         // 最小二乗法で推定
         // 事前分布の平均と分散を設定
         // 事前分布となるサイズはLOWER_BOUNDからUPPER_BOUNDの間の一様分布
@@ -220,7 +215,7 @@ impl Solver for RowPackingSolver<'_> {
         let mut best_operations = vec![];
         let _ = state.query(&estimated_input, &best_operations);
         let mut best_score = state.score_t as usize;
-        for t in 0..estimated_input.N.min(estimated_input.T) - 1 {
+        for t in 0..trial {
             if t >= row_widths.len() {
                 eprintln!("t={} is out of range", t);
                 self.io.measure(&Query { operations: vec![] });

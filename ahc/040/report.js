@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execSync, exec } from "child_process";
 import fs from "fs";
 import path from "path";
 
@@ -29,6 +29,7 @@ const percentageLogger = (rate) => {
 const SEED_START = 0;
 const SEED_END = 99;
 const IS_PARALLEL = true;
+const PARALLEL_NUM = 4;
 console.log(`Testing seeds from ${SEED_START} to ${SEED_END}...`);
 
 execSync(`rm -rf ${tools}/out`);
@@ -41,21 +42,25 @@ if (IS_PARALLEL) {
   const seeds = Array.from({ length: SEED_END - SEED_START + 1 }, (_, i) =>
     (i + SEED_START).toString().padStart(4, "0")
   );
-  const seedChunks = Array.from({ length: 4 }, (_, i) =>
-    seeds.slice(i * 25, (i + 1) * 25)
+  const seedChunks = Array.from(
+    { length: Math.ceil(seeds.length / PARALLEL_NUM) },
+    (_, i) => seeds.slice(i * PARALLEL_NUM, (i + 1) * PARALLEL_NUM)
   );
-  await Promise.all(
-    seedChunks.map((chunk) =>
-      Promise.all(
-        chunk.map((seed) => {
-          console.log(`Testing seed ${seed}...`);
-          execSync(
-            `time ${tools}/target/release/tester ${solver}/target/release/solve < ${tools}/in/${seed}.txt > ${tools}/out/${seed}.txt 2> ${tools}/err/${seed}.txt`
-          );
-        })
-      )
-    )
-  );
+  for (const chunk of seedChunks) {
+    const promises = chunk.map((seed) => {
+      return new Promise((resolve) => {
+        console.log(`Testing seed ${seed}...`);
+        exec(
+          `time ${tools}/target/release/tester ${solver}/target/release/solve < ${tools}/in/${seed}.txt > ${tools}/out/${seed}.txt 2> ${tools}/err/${seed}.txt`,
+          () => {
+            resolve();
+          }
+        );
+      });
+    });
+    await Promise.all(promises);
+  }
+
   for (let seed = SEED_START; seed <= SEED_END; seed++) {
     seed = seed.toString().padStart(4, "0");
     const res = fs.readFileSync(`${tools}/err/${seed}.txt`);
