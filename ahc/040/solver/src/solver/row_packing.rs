@@ -56,61 +56,50 @@ fn search(row_width: usize, rects: &[(usize, usize)], inv: bool) -> (usize, Vec<
 }
 
 const BASE_TRIAL: usize = 30;
+const ROTATION_SLOTS: [Rotation; 2] = [Rotation::Stay, Rotation::Rotate];
 
 impl Solver for RowPackingSolver<'_> {
     fn solve(&mut self) {
-        let start = Instant::now();
-        let mut measurement_width_indicies = vec![];
-        let mut measurement_width_values = vec![];
-        let mut measurement_height_indicies = vec![];
-        let mut measurement_height_values = vec![];
+        let mut measurement_indecies = vec![]; // even: width, odd: height
+        let mut measurement_values = vec![];
         for i in 0..self.input.N {
-            measurement_width_indicies.push(vec![i]);
-            measurement_width_values.push(self.input.rects[i].0);
-            measurement_height_indicies.push(vec![i]);
-            measurement_height_values.push(self.input.rects[i].1);
+            measurement_indecies.push(vec![i * 2]);
+            measurement_values.push(self.input.rects[i].0);
+            measurement_indecies.push(vec![i * 2 + 1]);
+            measurement_values.push(self.input.rects[i].1);
         }
+
         let mut rng = Pcg64Mcg::new(42);
         let trial = BASE_TRIAL.min(self.input.T);
-        // 最初の3つを見て最も大きい(つまりmax(width, height)が最も大きい)rectを探す
-        let mut max_rect = 0;
-        let mut max_rect_index = 0;
-        for i in 0..3 {
-            let (w, h) = self.input.rects[i];
-            if w.max(h) > max_rect {
-                max_rect = w.max(h);
-                max_rect_index = i;
-            }
-        }
         for _ in 0..self.input.T - trial {
-            // split in 2
             let mut width_measure_group = vec![];
             let mut height_measure_group = vec![];
-            for i in max_rect_index + 1..self.input.N {
+            for i in 1..self.input.N {
                 if rng.gen_bool(0.5) {
-                    width_measure_group.push(i);
+                    width_measure_group.push((i, ROTATION_SLOTS[rng.gen_range(0..2)]));
                 } else {
-                    height_measure_group.push(i);
+                    height_measure_group.push((i, ROTATION_SLOTS[rng.gen_range(0..2)]));
                 }
             }
-            let mut operations = vec![Operation {
-                p: max_rect_index,
-                r: Rotation::Stay,
+            let center_operation = Operation {
+                p: 0,
+                r: ROTATION_SLOTS[rng.gen_range(0..2)],
                 d: Direction::Up,
                 b: -1,
-            }];
+            };
+            let mut operations = vec![center_operation];
             for i in 0..width_measure_group.len() {
                 operations.push(Operation {
-                    p: width_measure_group[i],
-                    r: Rotation::Stay,
+                    p: width_measure_group[i].0,
+                    r: width_measure_group[i].1,
                     d: Direction::Left,
                     b: -1,
                 });
             }
             for i in 0..height_measure_group.len() {
                 operations.push(Operation {
-                    p: height_measure_group[i],
-                    r: Rotation::Stay,
+                    p: height_measure_group[i].0,
+                    r: height_measure_group[i].1,
                     d: Direction::Up,
                     b: -1,
                 });
@@ -118,44 +107,37 @@ impl Solver for RowPackingSolver<'_> {
             operations.sort_by_key(|op| op.p);
             let query = Query { operations };
             let (width, height) = self.io.measure(&query);
-            width_measure_group.insert(0, max_rect_index);
-            height_measure_group.insert(0, max_rect_index);
-            measurement_width_indicies.push(width_measure_group.clone());
-            measurement_width_values.push(width);
-            measurement_height_indicies.push(height_measure_group.clone());
-            measurement_height_values.push(height);
+            width_measure_group.insert(0, (0, center_operation.r));
+            height_measure_group.insert(0, (0, center_operation.r));
+            let mut measurement_width_indicies = vec![];
+            for (i, (p, r)) in width_measure_group.into_iter().enumerate() {
+                measurement_width_indicies.push(p * 2 + (r == Rotation::Rotate) as usize);
+            }
+            let mut measurement_height_indicies = vec![];
+            for (i, (p, r)) in height_measure_group.into_iter().enumerate() {
+                measurement_height_indicies.push(p * 2 + (r == Rotation::Stay) as usize);
+            }
+            measurement_indecies.push(measurement_width_indicies);
+            measurement_values.push(width);
+            measurement_indecies.push(measurement_height_indicies);
+            measurement_values.push(height);
         }
 
-        // 観測行列Aと観測ベクトルyを作成
-        assert!(measurement_width_indicies.len() == measurement_width_values.len());
-        let measurement_count = measurement_width_indicies.len();
-        let mut A_width = na::DMatrix::<f64>::zeros(measurement_count, self.input.N);
-        let mut A_height = na::DMatrix::<f64>::zeros(measurement_count, self.input.N);
+        // widthとheightを同時に推定
+        assert!(measurement_indecies.len() == measurement_values.len());
+        let measurement_count = measurement_indecies.len();
+        let mut A = na::DMatrix::<f64>::zeros(measurement_count, self.input.N * 2);
 
-        for (i, group) in measurement_width_indicies.iter().enumerate() {
+        for (i, group) in measurement_indecies.iter().enumerate() {
             for &j in group {
-                A_width[(i, j)] = 1.0;
+                A[(i, j)] = 1.0;
             }
         }
-        for (i, group) in measurement_height_indicies.iter().enumerate() {
-            for &j in group {
-                A_height[(i, j)] = 1.0;
-            }
-        }
-        let y_width = na::DVector::<f64>::from_vec(
-            measurement_width_values
-                .into_iter()
-                .map(|x| x as f64)
-                .collect(),
-        );
-        let y_height = na::DVector::<f64>::from_vec(
-            measurement_height_values
-                .into_iter()
-                .map(|x| x as f64)
-                .collect(),
+
+        let y = na::DVector::<f64>::from_vec(
+            measurement_values.into_iter().map(|x| x as f64).collect(),
         );
 
-        // 最小二乗法で推定
         // 事前分布の平均と分散を設定
         // 事前分布となるサイズはLOWER_BOUNDからUPPER_BOUNDの間の一様分布
         let prior_mean = (SIZE_LOWER_BOUND + SIZE_UPPER_BOUND) as f64 / 2.0;
@@ -164,22 +146,20 @@ impl Solver for RowPackingSolver<'_> {
         // 事前分布から正則化項の係数を計算
         let lambda_reg = (self.input.sigma as f64).powi(2) / prior_var;
 
-        let AtA_width = A_width.transpose() * &A_width
-            + lambda_reg * na::DMatrix::<f64>::identity(self.input.N, self.input.N);
-        let AtY_width = A_width.transpose() * &y_width
-            + lambda_reg * prior_mean * na::DVector::<f64>::repeat(self.input.N, 1.0);
-        let AtA_height = A_height.transpose() * &A_height
-            + lambda_reg * na::DMatrix::<f64>::identity(self.input.N, self.input.N);
-        let AtY_height = A_height.transpose() * &y_height
-            + lambda_reg * prior_mean * na::DVector::<f64>::repeat(self.input.N, 1.0);
+        let AtA = A.transpose() * &A
+            + lambda_reg * na::DMatrix::<f64>::identity(self.input.N * 2, self.input.N * 2);
+        let AtY = A.transpose() * &y
+            + lambda_reg * prior_mean * na::DVector::<f64>::repeat(self.input.N * 2, 1.0);
 
-        let estimated_width = na::linalg::Cholesky::new(AtA_width)
-            .unwrap()
-            .solve(&AtY_width);
+        let estimated = na::linalg::Cholesky::new(AtA).unwrap().solve(&AtY);
 
-        let estimated_height = na::linalg::Cholesky::new(AtA_height)
-            .unwrap()
-            .solve(&AtY_height);
+        let mut estimated_width = vec![];
+        let mut estimated_height = vec![];
+
+        for i in 0..self.input.N {
+            estimated_width.push(estimated[i * 2]);
+            estimated_height.push(estimated[i * 2 + 1]);
+        }
 
         let estimated_input = Input {
             N: self.input.N,
@@ -325,30 +305,30 @@ impl Solver for RowPackingSolver<'_> {
                 temp = start_temp + (end_temp - start_temp) * elapsed / each_tl as f64;
             }
 
-//             let python = format!(
-//                 r#"
-// import matplotlib.pyplot as plt
-// import numpy as np
-// import sys
+            //             let python = format!(
+            //                 r#"
+            // import matplotlib.pyplot as plt
+            // import numpy as np
+            // import sys
 
-// x = np.arange({})
-// y = np.array([{}])
-// plt.plot(x, y)
-// plt.savefig("score_transition_{}.png")
-// "#,
-//                 score_traisition.len(),
-//                 score_traisition
-//                     .iter()
-//                     .map(|x| x.to_string())
-//                     .collect::<Vec<String>>()
-//                     .join(","),
-//                 t
-//             );
-//             process::Command::new("python")
-//                 .arg("-c")
-//                 .arg(&python)
-//                 .output()
-//                 .expect("failed to execute process");
+            // x = np.arange({})
+            // y = np.array([{}])
+            // plt.plot(x, y)
+            // plt.savefig("score_transition_{}.png")
+            // "#,
+            //                 score_traisition.len(),
+            //                 score_traisition
+            //                     .iter()
+            //                     .map(|x| x.to_string())
+            //                     .collect::<Vec<String>>()
+            //                     .join(","),
+            //                 t
+            //             );
+            //             process::Command::new("python")
+            //                 .arg("-c")
+            //                 .arg(&python)
+            //                 .output()
+            //                 .expect("failed to execute process");
 
             self.io.measure(&Query {
                 operations: best_operations,

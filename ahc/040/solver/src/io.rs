@@ -11,7 +11,7 @@ pub struct Input {
     pub rects: Vec<(usize, usize)>,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, Copy)]
 pub enum Rotation {
     Stay,
     Rotate,
@@ -35,7 +35,7 @@ impl Display for Rotation {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, Copy)]
 pub enum Direction {
     Up,
     Left,
@@ -50,7 +50,7 @@ impl Display for Direction {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, Copy)]
 pub struct Operation {
     pub p: usize,
     pub r: Rotation,
