@@ -1,4 +1,4 @@
-use std::{collections::HashSet, mem::swap, time::Instant};
+use std::{collections::HashSet, mem::swap, os, process, time::Instant};
 
 use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_distr::{Distribution, Normal};
@@ -249,8 +249,8 @@ impl Solver for RowPackingSolver<'_> {
                 }
             }
             // 焼きなまし
-            let start_temp = 1000.0;
-            let end_temp = 1.0;
+            let start_temp = 5000.0;
+            let end_temp = 500.0;
             let mut best_operations = best_operations.clone();
             let mut best_score = {
                 let mut state = State::new(&estimated_input);
@@ -263,6 +263,8 @@ impl Solver for RowPackingSolver<'_> {
             let mut cur_deleted = best_deleted.clone();
             let mut temp = start_temp;
             let start_annealing = Instant::now();
+            let mut score_traisition = vec![];
+            score_traisition.push(cur_score);
             while start_annealing.elapsed().as_millis() < each_tl {
                 let mut operations = cur_operations.clone();
                 let mut deleted = cur_deleted.clone();
@@ -273,12 +275,28 @@ impl Solver for RowPackingSolver<'_> {
                         Rotation::Stay => Rotation::Rotate,
                         Rotation::Rotate => Rotation::Stay,
                     };
-                } else {
+                } else if prob < 0.95 {
                     let selected = rng.gen_range(0..operations.len() - 1);
                     if operations[selected + 1].b != selected as isize {
+                        deleted.push(operations[selected].clone());
                         operations.remove(selected);
-                        deleted.push(selected);
                     }
+                } else {
+                    // operationのrestore
+                    if deleted.is_empty() {
+                        continue;
+                    }
+                    let selected = deleted.choose(&mut rng).unwrap().clone();
+                    // もしoperationの中にfoo.p == selected.bがある場合はfooの後ろにselectedを挿入
+                    let mut idx = 0;
+                    for i in 0..operations.len() {
+                        if operations[i].p as isize == selected.b {
+                            idx = i;
+                            break;
+                        }
+                    }
+                    operations.insert(idx + 1, selected.clone());
+                    deleted.retain(|x| x != &selected);
                 }
                 let score = {
                     let mut state = State::new(&estimated_input);
@@ -302,9 +320,35 @@ impl Solver for RowPackingSolver<'_> {
                         cur_deleted.clone_from(&deleted);
                     }
                 }
+                score_traisition.push(cur_score);
                 let elapsed = start_annealing.elapsed().as_millis() as f64;
                 temp = start_temp + (end_temp - start_temp) * elapsed / each_tl as f64;
             }
+
+//             let python = format!(
+//                 r#"
+// import matplotlib.pyplot as plt
+// import numpy as np
+// import sys
+
+// x = np.arange({})
+// y = np.array([{}])
+// plt.plot(x, y)
+// plt.savefig("score_transition_{}.png")
+// "#,
+//                 score_traisition.len(),
+//                 score_traisition
+//                     .iter()
+//                     .map(|x| x.to_string())
+//                     .collect::<Vec<String>>()
+//                     .join(","),
+//                 t
+//             );
+//             process::Command::new("python")
+//                 .arg("-c")
+//                 .arg(&python)
+//                 .output()
+//                 .expect("failed to execute process");
 
             self.io.measure(&Query {
                 operations: best_operations,
