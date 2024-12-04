@@ -55,7 +55,6 @@ fn search(row_width: usize, rects: &[(usize, usize)], inv: bool) -> (usize, Vec<
     (max_width + height + max_height_in_row, row_counts)
 }
 
-const BASE_TRIAL: usize = 30;
 const ROTATION_SLOTS: [Rotation; 2] = [Rotation::Stay, Rotation::Rotate];
 
 impl Solver for RowPackingSolver<'_> {
@@ -70,7 +69,7 @@ impl Solver for RowPackingSolver<'_> {
         }
 
         let mut rng = Pcg64Mcg::new(42);
-        let trial = BASE_TRIAL.min(self.input.T);
+        let trial = self.input.T / 3;
         // 最初の3つを見て最も大きい(つまりmax(width, height)が最も大きい)rectを探す
         let mut max_rect = 0;
         let mut max_rect_index = 0;
@@ -84,7 +83,7 @@ impl Solver for RowPackingSolver<'_> {
         for _ in 0..self.input.T - trial {
             let mut width_measure_group = vec![];
             let mut height_measure_group = vec![];
-            for i in max_rect_index+1..self.input.N {
+            for i in max_rect_index + 1..self.input.N {
                 if rng.gen_bool(0.5) {
                     width_measure_group.push((i, ROTATION_SLOTS[rng.gen_range(0..2)]));
                 } else {
