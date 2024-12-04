@@ -71,10 +71,20 @@ impl Solver for RowPackingSolver<'_> {
 
         let mut rng = Pcg64Mcg::new(42);
         let trial = BASE_TRIAL.min(self.input.T);
+        // 最初の3つを見て最も大きい(つまりmax(width, height)が最も大きい)rectを探す
+        let mut max_rect = 0;
+        let mut max_rect_index = 0;
+        for i in 0..3 {
+            let (w, h) = self.input.rects[i];
+            if w.max(h) > max_rect {
+                max_rect = w.max(h);
+                max_rect_index = i;
+            }
+        }
         for _ in 0..self.input.T - trial {
             let mut width_measure_group = vec![];
             let mut height_measure_group = vec![];
-            for i in 1..self.input.N {
+            for i in max_rect_index+1..self.input.N {
                 if rng.gen_bool(0.5) {
                     width_measure_group.push((i, ROTATION_SLOTS[rng.gen_range(0..2)]));
                 } else {
@@ -82,7 +92,7 @@ impl Solver for RowPackingSolver<'_> {
                 }
             }
             let center_operation = Operation {
-                p: 0,
+                p: max_rect_index,
                 r: ROTATION_SLOTS[rng.gen_range(0..2)],
                 d: Direction::Up,
                 b: -1,
@@ -107,8 +117,8 @@ impl Solver for RowPackingSolver<'_> {
             operations.sort_by_key(|op| op.p);
             let query = Query { operations };
             let (width, height) = self.io.measure(&query);
-            width_measure_group.insert(0, (0, center_operation.r));
-            height_measure_group.insert(0, (0, center_operation.r));
+            width_measure_group.insert(0, (max_rect_index, center_operation.r));
+            height_measure_group.insert(0, (max_rect_index, center_operation.r));
             let mut measurement_width_indicies = vec![];
             for (i, (p, r)) in width_measure_group.into_iter().enumerate() {
                 measurement_width_indicies.push(p * 2 + (r == Rotation::Rotate) as usize);
