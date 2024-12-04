@@ -210,6 +210,7 @@ impl Solver for RowPackingSolver<'_> {
             score_widths.sort_by_key(|x| x.0);
             score_widths
         };
+        let each_tl = 2900 / trial as u128;
         for t in 0..trial {
             if t >= row_widths.len() {
                 eprintln!("t={} is out of range", t);
@@ -247,34 +248,64 @@ impl Solver for RowPackingSolver<'_> {
                     cur_width = 0;
                 }
             }
-            // それぞれのrectをひとつづつ回転させていきスコアが良くなったら採用
-            let mut perm = (0..estimated_input.N).collect::<Vec<_>>();
-            let start_rotation = Instant::now();
-            let mut state = State::new(&estimated_input);
-            let _ = state.query(&estimated_input, &best_operations);
-            let mut best_score = state.score_t as usize;
-            while start_rotation.elapsed().as_millis() < 90 {
-                let mut operations = best_operations.clone();
-                perm.shuffle(&mut rng);
-                let rotates = rng.gen_range(1..=estimated_input.N);
-                for i in 0..rotates {
-                    operations[perm[i]].r = match operations[perm[i]].r {
+            // 焼きなまし
+            let start_temp = 1000.0;
+            let end_temp = 1.0;
+            let mut best_operations = best_operations.clone();
+            let mut best_score = {
+                let mut state = State::new(&estimated_input);
+                let _ = state.query(&estimated_input, &best_operations);
+                state.score_t as usize
+            };
+            let mut best_deleted = vec![];
+            let mut cur_operations = best_operations.clone();
+            let mut cur_score = best_score;
+            let mut cur_deleted = best_deleted.clone();
+            let mut temp = start_temp;
+            let start_annealing = Instant::now();
+            while start_annealing.elapsed().as_millis() < each_tl {
+                let mut operations = cur_operations.clone();
+                let mut deleted = cur_deleted.clone();
+                let prob = rng.gen_range(0.0..1.0);
+                if prob < 0.9 {
+                    let selected = rng.gen_range(0..operations.len() - 1);
+                    operations[selected].r = match operations[selected].r {
                         Rotation::Stay => Rotation::Rotate,
                         Rotation::Rotate => Rotation::Stay,
                     };
+                } else {
+                    let selected = rng.gen_range(0..operations.len() - 1);
+                    if operations[selected + 1].b != selected as isize {
+                        operations.remove(selected);
+                        deleted.push(selected);
+                    }
                 }
-                let selected = rng.gen_range(0..operations.len() - 1);
-                if rng.gen_bool(0.1) && operations[selected + 1].b != selected as isize {
-                    operations.remove(selected);
+                let score = {
+                    let mut state = State::new(&estimated_input);
+                    let _ = state.query(&estimated_input, &operations);
+                    state.score_t as usize
+                };
+                if score < cur_score {
+                    cur_score = score;
+                    cur_operations.clone_from(&operations);
+                    cur_deleted.clone_from(&deleted);
+                    if cur_score < best_score {
+                        best_score = cur_score;
+                        best_operations.clone_from(&cur_operations);
+                        best_deleted.clone_from(&cur_deleted);
+                    }
+                } else {
+                    let diff = (cur_score as isize - score as isize) as f64;
+                    if rng.gen_bool((diff / temp).exp()) {
+                        cur_score = score;
+                        cur_operations.clone_from(&operations);
+                        cur_deleted.clone_from(&deleted);
+                    }
                 }
-                let mut state = State::new(&estimated_input);
-                let _ = state.query(&estimated_input, &operations);
-                let score = state.score_t as usize;
-                if score < best_score {
-                    best_score = score;
-                    best_operations.clone_from(&operations);
-                }
+                let elapsed = start_annealing.elapsed().as_millis() as f64;
+                temp = start_temp + (end_temp - start_temp) * elapsed / each_tl as f64;
             }
+
             self.io.measure(&Query {
                 operations: best_operations,
             });
