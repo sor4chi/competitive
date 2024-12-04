@@ -27,9 +27,9 @@ const percentageLogger = (rate) => {
 };
 
 const SEED_START = 0;
-const SEED_END = 99;
-const IS_PARALLEL = false;
-const PARALLEL_NUM = 4;
+const SEED_END = 999;
+const IS_PARALLEL = true;
+const PARALLEL_NUM = 10;
 console.log(`Testing seeds from ${SEED_START} to ${SEED_END}...`);
 
 execSync(`rm -rf ${tools}/out`);
@@ -49,13 +49,18 @@ if (IS_PARALLEL) {
   for (const chunk of seedChunks) {
     const promises = chunk.map((seed) => {
       return new Promise((resolve) => {
-        console.log(`Testing seed ${seed}...`);
-        exec(
-          `time ${tools}/target/release/tester ${solver}/target/release/solve < ${tools}/in/${seed}.txt > ${tools}/out/${seed}.txt 2> ${tools}/err/${seed}.txt`,
-          () => {
-            resolve();
-          }
-        );
+      console.log(`Testing seed ${seed}...`);
+      const timer = setTimeout(() => {
+        console.log(`Seed ${seed}: Timeout`);
+        resolve();
+      }, 30000);
+      exec(
+        `time ${tools}/target/release/tester ${solver}/target/release/solve < ${tools}/in/${seed}.txt > ${tools}/out/${seed}.txt 2> ${tools}/err/${seed}.txt`,
+        () => {
+        clearTimeout(timer);
+        resolve();
+        }
+      );
       });
     });
     await Promise.all(promises);
