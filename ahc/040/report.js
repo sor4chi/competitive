@@ -27,8 +27,8 @@ const percentageLogger = (rate) => {
 };
 
 const SEED_START = 0;
-const SEED_END = 999;
-const IS_PARALLEL = true;
+const SEED_END = 99;
+const IS_PARALLEL = false;
 const PARALLEL_NUM = 10;
 console.log(`Testing seeds from ${SEED_START} to ${SEED_END}...`);
 
