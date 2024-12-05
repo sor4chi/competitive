@@ -150,7 +150,7 @@ impl Solver for RowPackingSolver<'_> {
         // 事前分布の平均と分散を設定
         // 事前分布となるサイズはLOWER_BOUNDからUPPER_BOUNDの間の一様分布
         let avg = self.input.rects.iter().fold(0, |acc, x| acc + x.0 + x.1) / (self.input.N * 2);
-        let estimated_lower = 2 * avg - SIZE_UPPER_BOUND;
+        let estimated_lower = (2 * avg - SIZE_UPPER_BOUND).max(SIZE_LOWER_BOUND);
         let prior_mean = (estimated_lower + SIZE_UPPER_BOUND) as f64 / 2.0;
         let prior_var = ((SIZE_UPPER_BOUND - estimated_lower) as f64).powi(2) / 12.0;
 
