@@ -59,6 +59,8 @@ const ROTATION_SLOTS: [Rotation; 2] = [Rotation::Stay, Rotation::Rotate];
 
 impl Solver for RowPackingSolver<'_> {
     fn solve(&mut self) {
+        let start = Instant::now();
+        let tl = 2900;
         let mut measurement_indecies = vec![]; // even: width, odd: height
         let mut measurement_values = vec![];
         for i in 0..self.input.N {
@@ -69,7 +71,7 @@ impl Solver for RowPackingSolver<'_> {
         }
 
         let mut rng = Pcg64Mcg::new(42);
-        let trial = self.input.T / 3;
+        let mut trial = self.input.T / 3;
         // 最初の3つを見て最も大きい(つまりmax(width, height)が最も大きい)rectを探す
         let mut max_rect = 0;
         let mut max_rect_index = 0;
@@ -201,13 +203,19 @@ impl Solver for RowPackingSolver<'_> {
             score_widths.sort_by_key(|x| x.0);
             score_widths
         };
-        let each_tl = 2900 / trial as u128;
-        for t in 0..trial {
-            if t >= row_widths.len() {
-                eprintln!("t={} is out of range", t);
-                self.io.measure(&Query { operations: vec![] });
-                continue;
+        let mut visited = HashSet::new();
+        let mut row_widths_idx = 0;
+        while trial > 0 {
+            if row_widths_idx >= row_widths.len() {
+                eprintln!("[WARN] row_widths_idx out of range");
+                break;
             }
+            if tl < start.elapsed().as_millis() as u128 {
+                eprintln!("[WARN] time limit");
+                break;
+            }
+            let left = tl - start.elapsed().as_millis() as u128;
+            let each_tl = left / trial as u128;
             let mut best_operations = vec![];
             let mut cur_width = 0;
             for i in 0..estimated_input.N {
@@ -216,7 +224,7 @@ impl Solver for RowPackingSolver<'_> {
                 } else {
                     Rotation::Rotate
                 };
-                if row_widths[t].2 {
+                if row_widths[row_widths_idx].2 {
                     rotate.flip();
                 }
                 let w = if rotate == Rotation::Stay {
@@ -228,14 +236,14 @@ impl Solver for RowPackingSolver<'_> {
                     p: i,
                     r: rotate,
                     d: Direction::Up,
-                    b: if cur_width + w <= row_widths[t].1 {
+                    b: if cur_width + w <= row_widths[row_widths_idx].1 {
                         (i - 1) as isize
                     } else {
                         -1
                     },
                 });
                 cur_width += w;
-                if cur_width > row_widths[t].1 {
+                if cur_width > row_widths[row_widths_idx].1 {
                     cur_width = 0;
                 }
             }
@@ -341,9 +349,18 @@ impl Solver for RowPackingSolver<'_> {
             //                 .output()
             //                 .expect("failed to execute process");
 
+            if visited.contains(&best_operations) {
+                eprintln!("[WARN] visited");
+                continue;
+            }
+
             self.io.measure(&Query {
-                operations: best_operations,
+                operations: best_operations.clone(),
             });
+
+            visited.insert(best_operations);
+            trial -= 1;
+            row_widths_idx += 1;
         }
     }
 }
