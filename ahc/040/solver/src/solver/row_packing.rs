@@ -148,25 +148,21 @@ impl Solver for RowPackingSolver<'_> {
         );
 
         // 事前分布の平均と分散を設定
+        // 事前分布となるサイズはLOWER_BOUNDからUPPER_BOUNDの間の一様分布
         let avg = self.input.rects.iter().fold(0, |acc, x| acc + x.0 + x.1) / (self.input.N * 2);
         let estimated_lower = (2 * avg - SIZE_UPPER_BOUND).max(SIZE_LOWER_BOUND);
         let prior_mean = (estimated_lower + SIZE_UPPER_BOUND) as f64 / 2.0;
         let prior_var = ((SIZE_UPPER_BOUND - estimated_lower) as f64).powi(2) / 12.0;
 
-        let n_vars = self.input.N * 2;
-        let sigma = self.input.sigma as f64; // sigmaは既知
-        let A_t = A.transpose();
+        // 事前分布から正則化項の係数を計算
+        let lambda_reg = (self.input.sigma as f64).powi(2) / prior_var;
 
-        let m = na::DVector::<f64>::from_element(n_vars, prior_mean);
+        let AtA = A.transpose() * &A
+            + lambda_reg * na::DMatrix::<f64>::identity(self.input.N * 2, self.input.N * 2);
+        let AtY = A.transpose() * &y
+            + lambda_reg * prior_mean * na::DVector::<f64>::repeat(self.input.N * 2, 1.0);
 
-        let I = na::DMatrix::<f64>::identity(n_vars, n_vars);
-        let lhs = (&A_t * &A) / (sigma * sigma) + I * (1.0 / prior_var);
-        let rhs = (&A_t * &y) / (sigma * sigma) + &m * (1.0 / prior_var);
-
-        let estimated = lhs
-            .lu()
-            .solve(&rhs)
-            .expect("Failed to solve the regularized system");
+        let estimated = na::linalg::Cholesky::new(AtA).unwrap().solve(&AtY);
 
         let mut estimated_width = vec![];
         let mut estimated_height = vec![];
