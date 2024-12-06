@@ -1,6 +1,10 @@
 #![allow(non_snake_case, unused_macros)]
 
-use std::hash::{Hash, Hasher};
+use std::{
+    fs::File,
+    hash::{Hash, Hasher},
+    io::Write,
+};
 
 use crate::io::{Direction, Input, Operation, Rotation};
 
@@ -169,5 +173,26 @@ impl State {
         self.score.setmin(self.score_t);
         self.turn += 1;
         Ok(())
+    }
+
+    pub fn debug_rects(&self, filename: &str) {
+        let mut svg = String::new();
+        svg.push_str(
+r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000000 1000000" width="1000" height="1000" style="background-color: #eee;">"#
+    );
+        for rect in self.pos.iter() {
+            svg.push_str(&format!(
+                r#"<rect x="{}" y="{}" width="{}" height="{}" fill="red" fill-opacity="0.5" />"#,
+                rect.x1,
+                rect.y1,
+                rect.x2 - rect.x1,
+                rect.y2 - rect.y1
+            ));
+        }
+        let svg_text = svg.clone() + "</svg>";
+        File::create(filename)
+            .unwrap()
+            .write_all(svg_text.as_bytes())
+            .unwrap();
     }
 }

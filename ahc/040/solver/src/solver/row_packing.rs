@@ -310,7 +310,7 @@ impl Solver for RowPackingSolver<'_> {
             }
             // 焼きなまし
             let start_temp = 5000.0;
-            let end_temp = 500.0;
+            let end_temp = 0.0;
             let mut best_operations = best_operations.clone();
             let mut best_score = {
                 let mut state = State::new(&estimated_input);
@@ -323,8 +323,6 @@ impl Solver for RowPackingSolver<'_> {
             let mut cur_deleted = best_deleted.clone();
             let mut temp = start_temp;
             let start_annealing = Instant::now();
-            let mut score_traisition = vec![];
-            score_traisition.push(cur_score);
             let mut neighbor_selector = NeighborSelector::new();
             while start_annealing.elapsed().as_millis() < each_tl {
                 let mut operations = cur_operations.clone();
@@ -391,35 +389,10 @@ impl Solver for RowPackingSolver<'_> {
                         cur_deleted.clone_from(&deleted);
                     }
                 }
-                score_traisition.push(cur_score);
+
                 let elapsed = start_annealing.elapsed().as_millis() as f64;
                 temp = start_temp + (end_temp - start_temp) * elapsed / each_tl as f64;
             }
-
-            //             let python = format!(
-            //                 r#"
-            // import matplotlib.pyplot as plt
-            // import numpy as np
-            // import sys
-
-            // x = np.arange({})
-            // y = np.array([{}])
-            // plt.plot(x, y)
-            // plt.savefig("score_transition_{}.png")
-            // "#,
-            //                 score_traisition.len(),
-            //                 score_traisition
-            //                     .iter()
-            //                     .map(|x| x.to_string())
-            //                     .collect::<Vec<String>>()
-            //                     .join(","),
-            //                 t
-            //             );
-            //             process::Command::new("python")
-            //                 .arg("-c")
-            //                 .arg(&python)
-            //                 .output()
-            //                 .expect("failed to execute process");
 
             if visited.contains(&best_operations) {
                 eprintln!("[WARN] visited");
@@ -435,4 +408,31 @@ impl Solver for RowPackingSolver<'_> {
             row_widths_idx += 1;
         }
     }
+}
+
+fn plot_score_transition(score_transition: Vec<usize>, t: usize) {
+    let python = format!(
+        r#"
+import matplotlib.pyplot as plt
+import numpy as np
+import sys
+
+x = np.arange({})
+y = np.array([{}])
+plt.plot(x, y)
+plt.savefig("score_transition_{}.png")
+"#,
+        score_transition.len(),
+        score_transition
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>()
+            .join(","),
+        t
+    );
+    process::Command::new("python")
+        .arg("-c")
+        .arg(&python)
+        .output()
+        .expect("failed to execute process");
 }
