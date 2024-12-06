@@ -1,5 +1,11 @@
-use std::{collections::HashSet, mem::swap, os, process, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    mem::swap,
+    os, process,
+    time::Instant,
+};
 
+use itertools::Itertools;
 use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rand_distr::{Distribution, Normal};
 use rand_pcg::Pcg64Mcg;
@@ -56,6 +62,61 @@ fn search(row_width: usize, rects: &[(usize, usize)], inv: bool) -> (usize, Vec<
 }
 
 const ROTATION_SLOTS: [Rotation; 2] = [Rotation::Stay, Rotation::Rotate];
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+enum Neighbor {
+    Rotate,
+    Rebase,
+    Delete,
+    Restore,
+}
+
+macro_rules! hashmap {
+    (@single $($x:tt)*) => (());
+    (@count $($rest:expr),*) => (<[()]>::len(&[$(hashmap!(@single $rest)),*]));
+
+    ($($key:expr => $value:expr,)+) => { hashmap!($($key => $value),+) };
+    ($($key:expr => $value:expr),*) => {
+        {
+            let _cap = hashmap!(@count $($key),*);
+            let mut _map = HashMap::with_capacity(_cap);
+            $(
+                let _ = _map.insert($key, $value);
+            )*
+            _map
+        }
+    };
+}
+
+struct NeighborSelector {
+    slots: Vec<(Neighbor, f64)>,
+}
+
+impl NeighborSelector {
+    fn new() -> NeighborSelector {
+        let rates = hashmap! {
+            Neighbor::Rotate => 10,
+            Neighbor::Rebase => 5,
+            Neighbor::Delete => 1,
+            Neighbor::Restore => 1
+        };
+        let sum = rates.values().sum::<usize>() as f64;
+        NeighborSelector {
+            slots: rates.iter().map(|(k, &v)| (*k, v as f64 / sum)).collect(),
+        }
+    }
+    fn choose(&mut self, rng: &mut Pcg64Mcg) -> Neighbor {
+        let prob = rng.gen_range(0.0..1.0);
+        let mut acc = 0.0;
+        for (i, &(_, slot)) in self.slots.iter().enumerate() {
+            acc += slot;
+            if prob < acc {
+                return self.slots[i].0;
+            }
+        }
+        self.slots.last().unwrap().0
+    }
+}
 
 impl Solver for RowPackingSolver<'_> {
     fn solve(&mut self) {
@@ -264,45 +325,49 @@ impl Solver for RowPackingSolver<'_> {
             let start_annealing = Instant::now();
             let mut score_traisition = vec![];
             score_traisition.push(cur_score);
+            let mut neighbor_selector = NeighborSelector::new();
             while start_annealing.elapsed().as_millis() < each_tl {
                 let mut operations = cur_operations.clone();
                 let mut deleted = cur_deleted.clone();
-                let prob = rng.gen_range(0.0..1.0);
-                if prob < 0.85 {
-                    let selected = rng.gen_range(0..operations.len() - 1);
-                    operations[selected].r = match operations[selected].r {
-                        Rotation::Stay => Rotation::Rotate,
-                        Rotation::Rotate => Rotation::Stay,
-                    };
-                } else if prob < 0.9 {
-                    let selected = rng.gen_range(0..operations.len());
-                    if operations[selected].b == -1 {
-                        operations[selected].b = operations[selected].p as isize - 1;
-                    } else {
-                        operations[selected].b = -1;
+                let neighbor = neighbor_selector.choose(&mut rng);
+                match neighbor {
+                    Neighbor::Rotate => {
+                        let selected = rng.gen_range(0..operations.len() - 1);
+                        operations[selected].r = match operations[selected].r {
+                            Rotation::Stay => Rotation::Rotate,
+                            Rotation::Rotate => Rotation::Stay,
+                        };
                     }
-                } else if prob < 0.95 {
-                    let selected = rng.gen_range(0..operations.len() - 1);
-                    if operations[selected + 1].b != selected as isize {
-                        deleted.push(operations[selected].clone());
-                        operations.remove(selected);
-                    }
-                } else {
-                    // operationのrestore
-                    if deleted.is_empty() {
-                        continue;
-                    }
-                    let selected = deleted.choose(&mut rng).unwrap().clone();
-                    // もしoperationの中にfoo.p == selected.bがある場合はfooの後ろにselectedを挿入
-                    let mut idx = 0;
-                    for i in 0..operations.len() {
-                        if operations[i].p as isize == selected.b {
-                            idx = i;
-                            break;
+                    Neighbor::Rebase => {
+                        let selected = rng.gen_range(0..operations.len());
+                        if operations[selected].b == -1 {
+                            operations[selected].b = operations[selected].p as isize - 1;
+                        } else {
+                            operations[selected].b = -1;
                         }
                     }
-                    operations.insert(idx + 1, selected.clone());
-                    deleted.retain(|x| x != &selected);
+                    Neighbor::Delete => {
+                        let selected = rng.gen_range(0..operations.len() - 1);
+                        if operations[selected + 1].b != selected as isize {
+                            deleted.push(operations[selected]);
+                            operations.remove(selected);
+                        }
+                    }
+                    Neighbor::Restore => {
+                        if deleted.is_empty() {
+                            continue;
+                        }
+                        let selected = rng.gen_range(0..deleted.len());
+                        let mut idx = 0;
+                        for i in 0..operations.len() {
+                            if operations[i].p as isize == deleted[selected].b {
+                                idx = i;
+                                break;
+                            }
+                        }
+                        operations.insert(idx + 1, deleted[selected]);
+                        deleted.remove(selected);
+                    }
                 }
                 let score = {
                     let mut state = State::new(&estimated_input);
