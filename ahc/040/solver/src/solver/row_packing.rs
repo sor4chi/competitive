@@ -407,6 +407,11 @@ impl Solver for RowPackingSolver<'_> {
             trial -= 1;
             row_widths_idx += 1;
         }
+
+        while trial > 0 {
+            self.io.measure(&Query { operations: vec![] });
+            trial -= 1;
+        }
     }
 }
 
