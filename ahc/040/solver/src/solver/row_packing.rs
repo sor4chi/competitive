@@ -268,12 +268,19 @@ impl Solver for RowPackingSolver<'_> {
                 let mut operations = cur_operations.clone();
                 let mut deleted = cur_deleted.clone();
                 let prob = rng.gen_range(0.0..1.0);
-                if prob < 0.9 {
+                if prob < 0.85 {
                     let selected = rng.gen_range(0..operations.len() - 1);
                     operations[selected].r = match operations[selected].r {
                         Rotation::Stay => Rotation::Rotate,
                         Rotation::Rotate => Rotation::Stay,
                     };
+                } else if prob < 0.9 {
+                    let selected = rng.gen_range(0..operations.len());
+                    if operations[selected].b == -1 {
+                        operations[selected].b = operations[selected].p as isize - 1;
+                    } else {
+                        operations[selected].b = -1;
+                    }
                 } else if prob < 0.95 {
                     let selected = rng.gen_range(0..operations.len() - 1);
                     if operations[selected + 1].b != selected as isize {
