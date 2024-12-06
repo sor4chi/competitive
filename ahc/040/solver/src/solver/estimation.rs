@@ -47,52 +47,59 @@ fn load_source_value(n: usize, seed: usize) -> Vec<(i64, i64)> {
     source_rects
 }
 
+const ROTATION_SLOTS: [Rotation; 2] = [Rotation::Stay, Rotation::Rotate];
+
 impl Solver for EstimationSolver<'_> {
     fn solve(&mut self) {
-        let mut measurement_width_indicies = vec![];
-        let mut measurement_width_values = vec![];
-        let mut measurement_height_indicies = vec![];
-        let mut measurement_height_values = vec![];
+        let mut measurement_indecies = vec![]; // even: width, odd: height
+        let mut measurement_values = vec![];
         for i in 0..self.input.N {
-            measurement_width_indicies.push(vec![i]);
-            measurement_width_values.push(self.input.rects[i].0);
-            measurement_height_indicies.push(vec![i]);
-            measurement_height_values.push(self.input.rects[i].1);
+            measurement_indecies.push(vec![i * 2]);
+            measurement_values.push(self.input.rects[i].0);
+            measurement_indecies.push(vec![i * 2 + 1]);
+            measurement_values.push(self.input.rects[i].1);
         }
+
         let mut rng = Pcg64Mcg::new(42);
+        // 最初の3つを見て最も大きい(つまりmax(width, height)が最も大きい)rectを探す
+        let mut max_rect = 0;
+        let mut max_rect_index = 0;
+        for i in 0..3 {
+            let (w, h) = self.input.rects[i];
+            if w.max(h) > max_rect {
+                max_rect = w.max(h);
+                max_rect_index = i;
+            }
+        }
         for _ in 0..self.input.T - 1 {
-            // split in 2
             let mut width_measure_group = vec![];
             let mut height_measure_group = vec![];
-            let mut perm = (0..self.input.N).collect::<Vec<_>>();
-            perm.shuffle(&mut rng);
-            perm.truncate(self.input.N);
-            perm.sort();
-            for i in 1..self.input.N {
+            for i in max_rect_index + 1..self.input.N {
                 if rng.gen_bool(0.5) {
-                    width_measure_group.push(perm[i]);
+                    width_measure_group.push((i, ROTATION_SLOTS[rng.gen_range(0..2)]));
                 } else {
-                    height_measure_group.push(perm[i]);
+                    height_measure_group.push((i, ROTATION_SLOTS[rng.gen_range(0..2)]));
                 }
             }
-            let mut operations = vec![Operation {
-                p: perm[0],
-                r: Rotation::Stay,
+            let center_operation = Operation {
+                p: max_rect_index,
+                r: ROTATION_SLOTS[rng.gen_range(0..2)],
                 d: Direction::Up,
                 b: -1,
-            }];
+            };
+            let mut operations = vec![center_operation];
             for i in 0..width_measure_group.len() {
                 operations.push(Operation {
-                    p: width_measure_group[i],
-                    r: Rotation::Stay,
+                    p: width_measure_group[i].0,
+                    r: width_measure_group[i].1,
                     d: Direction::Left,
                     b: -1,
                 });
             }
             for i in 0..height_measure_group.len() {
                 operations.push(Operation {
-                    p: height_measure_group[i],
-                    r: Rotation::Stay,
+                    p: height_measure_group[i].0,
+                    r: height_measure_group[i].1,
                     d: Direction::Up,
                     b: -1,
                 });
@@ -100,83 +107,61 @@ impl Solver for EstimationSolver<'_> {
             operations.sort_by_key(|op| op.p);
             let query = Query { operations };
             let (width, height) = self.io.measure(&query);
-            width_measure_group.insert(0, 0);
-            height_measure_group.insert(0, 0);
-            measurement_width_indicies.push(width_measure_group.clone());
-            measurement_width_values.push(width);
-            measurement_height_indicies.push(height_measure_group.clone());
-            measurement_height_values.push(height);
+            width_measure_group.insert(0, (max_rect_index, center_operation.r));
+            height_measure_group.insert(0, (max_rect_index, center_operation.r));
+            let mut measurement_width_indicies = vec![];
+            for (i, (p, r)) in width_measure_group.into_iter().enumerate() {
+                measurement_width_indicies.push(p * 2 + (r == Rotation::Rotate) as usize);
+            }
+            let mut measurement_height_indicies = vec![];
+            for (i, (p, r)) in height_measure_group.into_iter().enumerate() {
+                measurement_height_indicies.push(p * 2 + (r == Rotation::Stay) as usize);
+            }
+            measurement_indecies.push(measurement_width_indicies);
+            measurement_values.push(width);
+            measurement_indecies.push(measurement_height_indicies);
+            measurement_values.push(height);
         }
 
-        // 観測行列Aと観測ベクトルyを作成
-        assert!(measurement_width_indicies.len() == measurement_width_values.len());
-        let measurement_count = measurement_width_indicies.len();
-        let mut A_width = na::DMatrix::<f64>::zeros(measurement_count, self.input.N);
-        let mut A_height = na::DMatrix::<f64>::zeros(measurement_count, self.input.N);
+        // widthとheightを同時に推定
+        assert!(measurement_indecies.len() == measurement_values.len());
+        let measurement_count = measurement_indecies.len();
+        let mut A = na::DMatrix::<f64>::zeros(measurement_count, self.input.N * 2);
 
-        for (i, group) in measurement_width_indicies.iter().enumerate() {
+        for (i, group) in measurement_indecies.iter().enumerate() {
             for &j in group {
-                A_width[(i, j)] = 1.0;
+                A[(i, j)] = 1.0;
             }
         }
-        for (i, group) in measurement_height_indicies.iter().enumerate() {
-            for &j in group {
-                A_height[(i, j)] = 1.0;
-            }
-        }
-        let y_width = na::DVector::<f64>::from_vec(
-            measurement_width_values
-                .into_iter()
-                .map(|x| x as f64)
-                .collect(),
-        );
-        let y_height = na::DVector::<f64>::from_vec(
-            measurement_height_values
-                .into_iter()
-                .map(|x| x as f64)
-                .collect(),
+
+        let y = na::DVector::<f64>::from_vec(
+            measurement_values.into_iter().map(|x| x as f64).collect(),
         );
 
-        // debug print A_width
-        for i in 0..A_width.nrows() {
-            for j in 0..A_width.ncols() {
-                eprint!("{}", if A_width[(i, j)] == 1.0 { "1" } else { "0" });
-            }
-            eprintln!();
-        }
-
-        // 最小二乗法で推定
         // 事前分布の平均と分散を設定
         // 事前分布となるサイズはLOWER_BOUNDからUPPER_BOUNDの間の一様分布
-        let prior_mean = (SIZE_LOWER_BOUND + SIZE_UPPER_BOUND) as f64 / 2.0;
-        let prior_var = ((SIZE_UPPER_BOUND - SIZE_LOWER_BOUND) as f64).powi(2) / 12.0;
+        let avg = self.input.rects.iter().fold(0, |acc, x| acc + x.0 + x.1) / (self.input.N * 2);
+        let estimated_lower = (2 * avg - SIZE_UPPER_BOUND).max(SIZE_LOWER_BOUND);
+        let prior_mean = (estimated_lower + SIZE_UPPER_BOUND) as f64 / 2.0;
+        let prior_var = ((SIZE_UPPER_BOUND - estimated_lower) as f64).powi(2) / 12.0;
 
         // 事前分布から正則化項の係数を計算
         let lambda_reg = (self.input.sigma as f64).powi(2) / prior_var;
 
-        let AtA_width = A_width.transpose() * &A_width
-            + lambda_reg * na::DMatrix::<f64>::identity(self.input.N, self.input.N);
-        let AtY_width = A_width.transpose() * &y_width
-            + lambda_reg * prior_mean * na::DVector::<f64>::repeat(self.input.N, 1.0);
-        let AtA_height = A_height.transpose() * &A_height
-            + lambda_reg * na::DMatrix::<f64>::identity(self.input.N, self.input.N);
-        let AtY_height = A_height.transpose() * &y_height
-            + lambda_reg * prior_mean * na::DVector::<f64>::repeat(self.input.N, 1.0);
+        let AtA = A.transpose() * &A
+            + lambda_reg * na::DMatrix::<f64>::identity(self.input.N * 2, self.input.N * 2);
+        let AtY = A.transpose() * &y
+            + lambda_reg * prior_mean * na::DVector::<f64>::repeat(self.input.N * 2, 1.0);
 
-        // let estimated_width = na::linalg::Cholesky::new(AtA_width)
-        //     .unwrap()
-        //     .solve(&AtY_width);
-        // let estimated_height = na::linalg::Cholesky::new(AtA_height)
-        //     .unwrap()
-        //     .solve(&AtY_height);
+        let estimated = na::linalg::Cholesky::new(AtA).unwrap().solve(&AtY);
 
-        let estimated_width = na::linalg::Cholesky::new(AtA_width)
-            .unwrap()
-            .solve(&AtY_width);
+        let mut estimated_width = vec![];
+        let mut estimated_height = vec![];
 
-        let estimated_height = na::linalg::Cholesky::new(AtA_height)
-            .unwrap()
-            .solve(&AtY_height);
+        for i in 0..self.input.N {
+            estimated_width.push(estimated[i * 2]);
+            estimated_height.push(estimated[i * 2 + 1]);
+        }
 
         let args: Vec<String> = env::args().collect();
         let seed = if args.len() > 1 && args[1].parse::<usize>().is_ok() {
